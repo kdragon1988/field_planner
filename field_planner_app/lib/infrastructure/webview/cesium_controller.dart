@@ -43,6 +43,45 @@ class CesiumController extends ChangeNotifier with LoggableMixin {
   /// エラー発生時のコールバック
   Function(String error)? onError;
 
+  /// 計測モード開始時のコールバック
+  Function(String type)? onMeasurementModeStarted;
+
+  /// 計測点追加時のコールバック
+  Function(List<GeoPosition> points, double currentValue, String unit)?
+      onMeasurementPointAdded;
+
+  /// 計測完了時のコールバック
+  Function(String type, List<GeoPosition> points, double value, String unit)?
+      onMeasurementCompleted;
+
+  /// 計測キャンセル時のコールバック
+  Function()? onMeasurementCancelled;
+
+  /// 計測ポイント移動時のコールバック
+  Function(String measurementId, int pointIndex, GeoPosition newPoint)?
+      onMeasurementPointMoved;
+
+  /// 計測ポイント削除時のコールバック
+  Function(String measurementId, int pointIndex)? onMeasurementPointDeleted;
+
+  /// 計測編集モード開始時のコールバック
+  Function(String measurementId)? onMeasurementEditModeStarted;
+
+  /// 計測編集モード終了時のコールバック
+  Function(String measurementId)? onMeasurementEditModeEnded;
+
+  /// 3D Tileset追加完了時のコールバック
+  Function(String id, String name, GeoPosition center, double radius)? onTilesetAdded;
+
+  /// 3D Tileset削除時のコールバック
+  Function(String id)? onTilesetRemoved;
+
+  /// 3D Tilesetエラー時のコールバック
+  Function(String id, String error)? onTilesetError;
+
+  /// Google 3D Tiles表示/非表示変更時のコールバック
+  Function(bool visible)? onGoogleTilesetVisibilityChanged;
+
   /// コンストラクタ（JavaScriptチャネルを自動設定）
   CesiumController(this._webViewController) {
     _setupJavaScriptChannels();
@@ -105,6 +144,123 @@ class CesiumController extends ChangeNotifier with LoggableMixin {
             final position = GeoPosition.fromJson(payload);
             onMapClicked?.call(position);
             logDebug('Map clicked: $position');
+          }
+          break;
+
+        // 計測イベント
+        case 'measurementModeStarted':
+          if (payload != null) {
+            final type = payload['type'] as String;
+            onMeasurementModeStarted?.call(type);
+            logInfo('Measurement mode started: $type');
+          }
+          break;
+
+        case 'measurementPointAdded':
+          if (payload != null) {
+            final pointsJson = payload['points'] as List<dynamic>;
+            final points = pointsJson
+                .map((p) => GeoPosition.fromJson(p as Map<String, dynamic>))
+                .toList();
+            final currentValue = (payload['currentValue'] as num).toDouble();
+            final unit = payload['unit'] as String;
+            onMeasurementPointAdded?.call(points, currentValue, unit);
+            logDebug('Measurement point added: ${points.length} points, value: $currentValue $unit');
+          }
+          break;
+
+        case 'measurementCompleted':
+          if (payload != null) {
+            final type = payload['type'] as String;
+            final pointsJson = payload['points'] as List<dynamic>;
+            final points = pointsJson
+                .map((p) => GeoPosition.fromJson(p as Map<String, dynamic>))
+                .toList();
+            final value = (payload['value'] as num).toDouble();
+            final unit = payload['unit'] as String;
+            onMeasurementCompleted?.call(type, points, value, unit);
+            logInfo('Measurement completed: $type, value: $value $unit');
+          }
+          break;
+
+        case 'measurementCancelled':
+          onMeasurementCancelled?.call();
+          logInfo('Measurement cancelled');
+          break;
+
+        case 'measurementPointMoved':
+          if (payload != null) {
+            final measurementId = payload['measurementId'] as String;
+            final pointIndex = payload['pointIndex'] as int;
+            final newPointJson = payload['newPoint'] as Map<String, dynamic>;
+            final newPoint = GeoPosition.fromJson(newPointJson);
+            onMeasurementPointMoved?.call(measurementId, pointIndex, newPoint);
+            logInfo('Measurement point moved: $measurementId, index: $pointIndex');
+          }
+          break;
+
+        case 'measurementPointDeleted':
+          if (payload != null) {
+            final measurementId = payload['measurementId'] as String;
+            final pointIndex = payload['pointIndex'] as int;
+            onMeasurementPointDeleted?.call(measurementId, pointIndex);
+            logInfo('Measurement point deleted: $measurementId, index: $pointIndex');
+          }
+          break;
+
+        case 'measurementEditModeStarted':
+          if (payload != null) {
+            final measurementId = payload['measurementId'] as String;
+            onMeasurementEditModeStarted?.call(measurementId);
+            logInfo('Measurement edit mode started: $measurementId');
+          }
+          break;
+
+        case 'measurementEditModeEnded':
+          if (payload != null) {
+            final measurementId = payload['measurementId'] as String;
+            onMeasurementEditModeEnded?.call(measurementId);
+            logInfo('Measurement edit mode ended: $measurementId');
+          }
+          break;
+
+        // Tilesetイベント
+        case 'tilesetAdded':
+          if (payload != null) {
+            final id = payload['id'] as String;
+            final name = payload['name'] as String? ?? id;
+            final centerJson = payload['center'] as Map<String, dynamic>?;
+            final radius = (payload['radius'] as num?)?.toDouble() ?? 0;
+            if (centerJson != null) {
+              final center = GeoPosition.fromJson(centerJson);
+              onTilesetAdded?.call(id, name, center, radius);
+              logInfo('Tileset added: $id at ${center.latitude}, ${center.longitude}');
+            }
+          }
+          break;
+
+        case 'tilesetRemoved':
+          if (payload != null) {
+            final id = payload['id'] as String;
+            onTilesetRemoved?.call(id);
+            logInfo('Tileset removed: $id');
+          }
+          break;
+
+        case 'tilesetError':
+          if (payload != null) {
+            final id = payload['id'] as String;
+            final error = payload['error'] as String? ?? 'Unknown error';
+            onTilesetError?.call(id, error);
+            logError('Tileset error: $id - $error');
+          }
+          break;
+
+        case 'googleTilesetVisibilityChanged':
+          if (payload != null) {
+            final visible = payload['visible'] as bool? ?? true;
+            onGoogleTilesetVisibilityChanged?.call(visible);
+            logInfo('Google tileset visibility changed: $visible');
           }
           break;
 
@@ -217,8 +373,239 @@ class CesiumController extends ChangeNotifier with LoggableMixin {
     return null;
   }
 
-  @override
-  void dispose() {
-    super.dispose();
+  // ============================================
+  // 計測機能
+  // ============================================
+
+  /// 計測モードを開始
+  ///
+  /// [type] 計測タイプ ('distance', 'area', 'height')
+  Future<void> startMeasurementMode(String type) async {
+    await executeMethod('startMeasurementMode', {
+      'type': type,
+    });
+    logInfo('Starting measurement mode: $type');
+  }
+
+  /// 計測をキャンセル
+  Future<void> cancelMeasurement() async {
+    await executeMethod('cancelMeasurement', {});
+    logInfo('Measurement cancelled');
+  }
+
+  /// 計測結果を表示
+  ///
+  /// [measurement] 計測データ（id, type, name, points, value, unit, color等）
+  Future<void> addMeasurementDisplay(Map<String, dynamic> measurement) async {
+    await executeMethod('addMeasurementDisplay', measurement);
+  }
+
+  /// 計測結果を削除
+  ///
+  /// [measurementId] 計測ID
+  Future<void> removeMeasurementDisplay(String measurementId) async {
+    await executeMethod('removeMeasurementDisplay', {
+      'measurementId': measurementId,
+    });
+  }
+
+  /// 計測結果の表示/非表示を切り替え
+  ///
+  /// [measurementId] 計測ID
+  /// [visible] 表示フラグ
+  Future<void> setMeasurementVisible(String measurementId, bool visible) async {
+    await executeMethod('setMeasurementVisible', {
+      'measurementId': measurementId,
+      'visible': visible,
+    });
+  }
+
+  /// すべての計測結果をクリア
+  Future<void> clearAllMeasurements() async {
+    await executeMethod('clearAllMeasurements', {});
+  }
+
+  /// 計測結果のスタイルを更新
+  ///
+  /// [measurementId] 計測ID
+  /// [color] 色（HEX）
+  /// [fillOpacity] 塗りの不透明度
+  /// [lineWidth] 線の太さ
+  Future<void> updateMeasurementStyle({
+    required String measurementId,
+    required String color,
+    required double fillOpacity,
+    double? lineWidth,
+  }) async {
+    await executeMethod('updateMeasurementStyle', {
+      'measurementId': measurementId,
+      'color': color,
+      'fillOpacity': fillOpacity,
+      if (lineWidth != null) 'lineWidth': lineWidth,
+    });
+  }
+
+  /// 計測結果を更新（ポイント変更を含む）
+  ///
+  /// [measurement] 計測データ
+  Future<void> updateMeasurementDisplay(Map<String, dynamic> measurement) async {
+    await executeMethod('updateMeasurementDisplay', measurement);
+  }
+
+  /// 計測ポイント編集モードを開始
+  ///
+  /// [measurementId] 計測ID
+  Future<void> startMeasurementEditMode(String measurementId) async {
+    await executeMethod('startMeasurementEditMode', {
+      'measurementId': measurementId,
+    });
+    logInfo('Starting measurement edit mode: $measurementId');
+  }
+
+  /// 計測ポイント編集モードを終了
+  Future<void> endMeasurementEditMode() async {
+    await executeMethod('endMeasurementEditMode', {});
+    logInfo('Ending measurement edit mode');
+  }
+
+  // ============================================
+  // 3D Tileset機能
+  // ============================================
+
+  /// ローカルの3D Tilesを追加
+  ///
+  /// [id] TilesetのユニークID
+  /// [url] tileset.jsonのURL（file://プロトコル対応）
+  /// [name] 表示名
+  /// [opacity] 不透明度（0.0〜1.0）
+  /// [show] 表示フラグ
+  Future<void> addLocalTileset({
+    required String id,
+    required String url,
+    String? name,
+    double opacity = 1.0,
+    bool show = true,
+  }) async {
+    await executeMethod('addLocalTileset', {
+      'id': id,
+      'url': url,
+      'name': name ?? id,
+      'opacity': opacity,
+      'show': show,
+    });
+    logInfo('Adding local tileset: $id from $url');
+  }
+
+  /// 3D Tilesetを削除
+  ///
+  /// [id] TilesetのID
+  Future<void> removeTileset(String id) async {
+    await executeMethod('removeTileset', {'id': id});
+    logInfo('Removing tileset: $id');
+  }
+
+  /// 3D Tilesetの表示/非表示を切り替え
+  ///
+  /// [id] TilesetのID
+  /// [visible] 表示フラグ
+  Future<void> setTilesetVisible(String id, bool visible) async {
+    await executeMethod('setTilesetVisible', {
+      'id': id,
+      'visible': visible,
+    });
+  }
+
+  /// 3D Tilesetの不透明度を設定
+  ///
+  /// [id] TilesetのID
+  /// [opacity] 不透明度（0.0〜1.0）
+  Future<void> setTilesetOpacity(String id, double opacity) async {
+    await executeMethod('setTilesetOpacity', {
+      'id': id,
+      'opacity': opacity,
+    });
+  }
+
+  /// Google Photorealistic 3D Tilesの表示/非表示を切り替え
+  ///
+  /// [visible] 表示フラグ
+  Future<void> setGoogleTilesetVisible(bool visible) async {
+    await executeMethod('setGoogleTilesetVisible', {'visible': visible});
+    logInfo('Setting Google tileset visible: $visible');
+  }
+
+  /// 3D Tilesetの位置にカメラを移動
+  ///
+  /// [id] TilesetのID
+  Future<void> flyToTileset(String id) async {
+    await executeMethod('flyToTileset', {'id': id});
+    logInfo('Flying to tileset: $id');
+  }
+
+  /// 地形の表示/非表示を切り替え
+  ///
+  /// [enabled] 有効フラグ
+  Future<void> setTerrainEnabled(bool enabled) async {
+    await executeMethod('setTerrainEnabled', {'enabled': enabled});
+    logInfo('Setting terrain enabled: $enabled');
+  }
+
+  /// Google 3D Tilesにクリッピングを設定
+  ///
+  /// インポートしたTilesetの範囲でGoogle 3D Tilesをクリップ
+  /// [tilesetId] クリップ元のTilesetのID
+  Future<void> setGoogleTilesetClipping(String tilesetId) async {
+    await executeMethod('setGoogleTilesetClipping', {'tilesetId': tilesetId});
+    logInfo('Setting Google tileset clipping for: $tilesetId');
+  }
+
+  /// Google 3D Tilesのクリッピングを解除
+  Future<void> removeGoogleTilesetClipping() async {
+    await executeMethod('removeGoogleTilesetClipping', {});
+    logInfo('Removing Google tileset clipping');
+  }
+
+  /// Tilesetの位置を調整
+  ///
+  /// [id] TilesetのID
+  /// [heightOffset] 高さオフセット（メートル）
+  /// [longitude] 経度オフセット（度）
+  /// [latitude] 緯度オフセット（度）
+  /// [heading] 方位角（度）
+  /// [pitch] ピッチ（度）
+  /// [roll] ロール（度）
+  Future<void> adjustTilesetPosition({
+    required String id,
+    double? heightOffset,
+    double? longitude,
+    double? latitude,
+    double? heading,
+    double? pitch,
+    double? roll,
+  }) async {
+    await executeMethod('adjustTilesetPosition', {
+      'id': id,
+      if (heightOffset != null) 'heightOffset': heightOffset,
+      if (longitude != null) 'longitude': longitude,
+      if (latitude != null) 'latitude': latitude,
+      if (heading != null) 'heading': heading,
+      if (pitch != null) 'pitch': pitch,
+      if (roll != null) 'roll': roll,
+    });
+  }
+
+  /// Tilesetの画質（LOD）を調整
+  ///
+  /// [id] TilesetのID
+  /// [screenSpaceError] Screen Space Error（1-64、小さいほど高画質）
+  Future<void> adjustTilesetQuality({
+    required String id,
+    required double screenSpaceError,
+  }) async {
+    await executeMethod('adjustTilesetQuality', {
+      'id': id,
+      'screenSpaceError': screenSpaceError,
+    });
+    logInfo('Adjusting tileset quality: $id, SSE: $screenSpaceError');
   }
 }

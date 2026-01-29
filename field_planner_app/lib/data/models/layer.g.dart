@@ -44,6 +44,7 @@ const _$LayerTypeEnumMap = {
   LayerType.basemap: 'basemap',
   LayerType.pointCloud: 'pointCloud',
   LayerType.mesh: 'mesh',
+  LayerType.tiles3D: 'tiles3D',
   LayerType.terrain: 'terrain',
   LayerType.placements: 'placements',
   LayerType.measurements: 'measurements',

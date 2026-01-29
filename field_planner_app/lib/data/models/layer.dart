@@ -7,6 +7,7 @@ enum LayerType {
   basemap('ベースマップ'),
   pointCloud('点群'),
   mesh('メッシュ'),
+  tiles3D('3D Tiles'),
   terrain('地形'),
   placements('配置'),
   measurements('計測'),

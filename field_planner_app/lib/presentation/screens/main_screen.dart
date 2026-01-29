@@ -7,12 +7,15 @@ import '../../data/models/basemap.dart';
 import '../../infrastructure/webview/cesium_controller.dart';
 import '../providers/basemap_provider.dart';
 import '../providers/cesium_provider.dart';
+import '../providers/measurement_provider.dart';
+import '../providers/tileset_provider.dart';
 import '../widgets/cesium_map_widget.dart';
-import '../widgets/dialogs/basemap_selector_dialog.dart';
+import '../widgets/dialogs/tileset_import_dialog.dart';
 import '../widgets/panels/layer_panel.dart';
 import '../widgets/panels/asset_palette.dart';
 import '../widgets/panels/measurement_panel.dart';
 import '../widgets/panels/placement_inspector.dart';
+import '../widgets/panels/tileset_inspector.dart';
 
 /// メイン画面
 ///
@@ -213,12 +216,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
           // 3Dデータインポート
           IconButton(
             icon: const Icon(Icons.add_box),
-            tooltip: '3Dデータをインポート',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('インポート機能はプロジェクトを開いた後に使用できます')),
-              );
-            },
+            tooltip: '3Dモデルをインポート',
+            onPressed: _showTilesetImportDialog,
           ),
 
           const Spacer(),
@@ -354,6 +353,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
             controller.onCameraChanged = (position) {
               ref.read(cameraPositionProvider.notifier).updatePosition(position);
             };
+
+            // 計測プロバイダーにCesiumControllerを設定
+            ref.read(measurementProvider.notifier).updateController(controller);
+
+            // TilesetプロバイダーにCesiumControllerを設定
+            ref.read(tilesetProvider.notifier).setController(controller);
           },
         ),
 
@@ -459,6 +464,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   /// 右パネルを構築
   Widget _buildRightPanel() {
+    final tilesetState = ref.watch(tilesetProvider);
+    final hasSelectedTileset = tilesetState.selectedTilesetId != null;
+
     return Container(
       width: _rightPanelWidth,
       decoration: BoxDecoration(
@@ -467,19 +475,21 @@ class _MainScreenState extends ConsumerState<MainScreen>
           left: BorderSide(color: Theme.of(context).dividerColor),
         ),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: EdgeInsets.all(12),
+            padding: const EdgeInsets.all(12),
             child: Text(
-              'プロパティ',
-              style: TextStyle(fontWeight: FontWeight.bold),
+              hasSelectedTileset ? '3Dモデル設定' : 'プロパティ',
+              style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
-          Divider(height: 1),
+          const Divider(height: 1),
           Expanded(
-            child: PlacementInspector(),
+            child: hasSelectedTileset
+                ? const TilesetInspector()
+                : const PlacementInspector(),
           ),
         ],
       ),
@@ -530,6 +540,31 @@ class _MainScreenState extends ConsumerState<MainScreen>
         ],
       ),
     );
+  }
+
+  /// 3Dモデルインポートダイアログを表示
+  Future<void> _showTilesetImportDialog() async {
+    final result = await showDialog<TilesetImportResult>(
+      context: context,
+      builder: (context) => const TilesetImportDialog(),
+    );
+
+    if (result != null && mounted) {
+      // Tilesetを追加
+      await ref.read(tilesetProvider.notifier).addTileset(
+            name: result.name,
+            tilesetJsonPath: result.tilesetJsonPath,
+            folderPath: result.folderPath,
+            flyTo: result.flyToAfterImport,
+            clipGoogleTiles: result.clipGoogleTiles,
+          );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('3Dモデル「${result.name}」をインポートしました')),
+        );
+      }
+    }
   }
 
   void _showShortcutHelp() {
