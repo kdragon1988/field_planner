@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/models/drone_formation.dart';
+import '../../../data/models/geo_position.dart';
 import '../../../data/models/layer.dart';
+import '../../providers/asset_provider.dart';
+import '../../providers/placement_provider.dart';
 import '../../providers/tileset_provider.dart';
 import '../dialogs/tileset_import_dialog.dart';
+import 'drone_show_panel.dart';
 
 /// レイヤーパネル
 ///
@@ -18,11 +23,14 @@ class LayerPanel extends ConsumerStatefulWidget {
 
 class _LayerPanelState extends ConsumerState<LayerPanel> {
   Layer? _selectedLayer;
+  bool _droneLayoutExpanded = true;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tilesetState = ref.watch(tilesetProvider);
+    final placedFormationsAsync = ref.watch(placedDroneFormationsProvider);
+    final selectedDroneId = ref.watch(selectedDroneFormationIdProvider);
 
     // 基本レイヤー + 3D Tilesレイヤーを結合
     final baseLayers = _getBaseLayers(tilesetState);
@@ -37,45 +45,181 @@ class _LayerPanelState extends ConsumerState<LayerPanel> {
 
         // レイヤーリスト
         Expanded(
-          child: ListView.builder(
-            itemCount: allLayers.length,
-            itemBuilder: (context, index) {
-              final layer = allLayers[index];
-              final isCustomTileset = layer.type == LayerType.tiles3D &&
-                  layer.id != 'google_3d' &&
-                  tilesetState.layers.any((t) => t.id == layer.id);
-              
-              return _LayerTile(
-                key: ValueKey(layer.id),
-                index: index,
-                layer: layer,
-                isSelected: _selectedLayer?.id == layer.id ||
-                    tilesetState.selectedTilesetId == layer.id,
-                onTap: () {
-                  setState(() => _selectedLayer = layer);
-                  // カスタムTilesetの場合は選択状態にしてプロパティパネルを表示
-                  if (isCustomTileset) {
-                    ref.read(tilesetProvider.notifier).selectTileset(layer.id);
-                  } else {
-                    ref.read(tilesetProvider.notifier).selectTileset(null);
-                  }
-                },
-                onVisibilityChanged: (visible) =>
-                    _updateLayerVisibility(layer, visible),
-                onOpacityChanged: (opacity) =>
-                    _updateLayerOpacity(layer, opacity),
-                onDelete: isCustomTileset
-                    ? () => _deleteTilesetLayer(layer.id)
-                    : null,
-                onFlyTo: isCustomTileset
-                    ? () => ref.read(tilesetProvider.notifier).flyToTileset(layer.id)
-                    : null,
-              );
-            },
+          child: ListView(
+            children: [
+              // 通常のレイヤー
+              ...allLayers.map((layer) {
+                final isCustomTileset = layer.type == LayerType.tiles3D &&
+                    layer.id != 'google_3d' &&
+                    tilesetState.layers.any((t) => t.id == layer.id);
+                
+                return _LayerTile(
+                  key: ValueKey(layer.id),
+                  index: allLayers.indexOf(layer),
+                  layer: layer,
+                  isSelected: _selectedLayer?.id == layer.id ||
+                      tilesetState.selectedTilesetId == layer.id,
+                  onTap: () {
+                    setState(() => _selectedLayer = layer);
+                    ref.read(selectedDroneFormationIdProvider.notifier).state = null;
+                    // カスタムTilesetの場合は選択状態にしてプロパティパネルを表示
+                    if (isCustomTileset) {
+                      ref.read(tilesetProvider.notifier).selectTileset(layer.id);
+                    } else {
+                      ref.read(tilesetProvider.notifier).selectTileset(null);
+                    }
+                  },
+                  onVisibilityChanged: (visible) =>
+                      _updateLayerVisibility(layer, visible),
+                  onOpacityChanged: (opacity) =>
+                      _updateLayerOpacity(layer, opacity),
+                  onDelete: isCustomTileset
+                      ? () => _deleteTilesetLayer(layer.id)
+                      : null,
+                  onFlyTo: isCustomTileset
+                      ? () => ref.read(tilesetProvider.notifier).flyToTileset(layer.id)
+                      : null,
+                );
+              }),
+
+              // ドローンショーレイアウトフォルダ
+              _buildDroneLayoutFolder(
+                theme,
+                placedFormationsAsync,
+                selectedDroneId,
+              ),
+            ],
           ),
         ),
       ],
     );
+  }
+
+  /// ドローンショーレイアウトフォルダを構築
+  Widget _buildDroneLayoutFolder(
+    ThemeData theme,
+    AsyncValue<List<PlacedDroneFormation>> placedFormationsAsync,
+    String? selectedDroneId,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // フォルダヘッダー
+        InkWell(
+          onTap: () => setState(() => _droneLayoutExpanded = !_droneLayoutExpanded),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            child: Row(
+              children: [
+                Icon(
+                  _droneLayoutExpanded ? Icons.folder_open : Icons.folder,
+                  size: 18,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'ドローンショーレイアウト',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 13,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const Spacer(),
+                placedFormationsAsync.when(
+                  data: (placed) => Text(
+                    '${placed.length}件',
+                    style: TextStyle(fontSize: 11, color: theme.hintColor),
+                  ),
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                ),
+                Icon(
+                  _droneLayoutExpanded ? Icons.expand_less : Icons.expand_more,
+                  size: 18,
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // 配置済みフォーメーション一覧
+        if (_droneLayoutExpanded)
+          placedFormationsAsync.when(
+            data: (placedFormations) {
+              if (placedFormations.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Center(
+                    child: Text(
+                      'ドローンタブから配置してください',
+                      style: TextStyle(fontSize: 12, color: theme.hintColor),
+                    ),
+                  ),
+                );
+              }
+              return Column(
+                children: placedFormations.map((placed) {
+                  final isSelected = selectedDroneId == placed.id;
+                  return _DroneLayoutTile(
+                    placedFormation: placed,
+                    isSelected: isSelected,
+                    onTap: () {
+                      setState(() => _selectedLayer = null);
+                      ref.read(tilesetProvider.notifier).selectTileset(null);
+                      ref.read(selectedDroneFormationIdProvider.notifier).state = placed.id;
+                    },
+                    onVisibilityChanged: (visible) {
+                      ref.read(placementControllerProvider)?.setDroneFormationVisible(
+                        placed.id,
+                        visible,
+                      );
+                    },
+                    onZoom: () {
+                      ref.read(placementControllerProvider)?.zoomToDroneFormation(placed.id);
+                    },
+                    onDelete: () => _deletePlacedFormation(placed),
+                  );
+                }).toList(),
+              );
+            },
+            loading: () => const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+            error: (e, _) => Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('エラー: $e', style: TextStyle(color: theme.colorScheme.error)),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _deletePlacedFormation(PlacedDroneFormation placed) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('配置を削除'),
+        content: Text('「${placed.name}」の配置を削除しますか？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('キャンセル')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      ref.read(placementControllerProvider)?.removePlacedDroneFormation(placed.id);
+      if (ref.read(selectedDroneFormationIdProvider) == placed.id) {
+        ref.read(selectedDroneFormationIdProvider.notifier).state = null;
+      }
+    }
   }
 
   /// 基本レイヤーを取得（状態に基づく）
@@ -390,5 +534,89 @@ class _LayerTileState extends State<_LayerTile> {
       case LayerType.annotations:
         return Icons.edit_note;
     }
+  }
+}
+
+/// ドローンレイアウトタイル
+class _DroneLayoutTile extends StatelessWidget {
+  final PlacedDroneFormation placedFormation;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final ValueChanged<bool> onVisibilityChanged;
+  final VoidCallback onZoom;
+  final VoidCallback onDelete;
+
+  const _DroneLayoutTile({
+    required this.placedFormation,
+    required this.isSelected,
+    required this.onTap,
+    required this.onVisibilityChanged,
+    required this.onZoom,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      color: isSelected
+          ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+          : null,
+      child: ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.only(left: 32, right: 8),
+        leading: Icon(
+          Icons.flight,
+          size: 18,
+          color: isSelected ? theme.colorScheme.primary : theme.hintColor,
+        ),
+        title: Text(
+          placedFormation.name,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : null,
+          ),
+        ),
+        subtitle: Text(
+          '高度: ${placedFormation.altitude.toStringAsFixed(0)}m',
+          style: const TextStyle(fontSize: 10),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.my_location, size: 16),
+              tooltip: '移動',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28),
+              onPressed: onZoom,
+            ),
+            IconButton(
+              icon: Icon(
+                placedFormation.visible ? Icons.visibility : Icons.visibility_off,
+                size: 16,
+              ),
+              tooltip: placedFormation.visible ? '非表示' : '表示',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28),
+              onPressed: () => onVisibilityChanged(!placedFormation.visible),
+            ),
+            IconButton(
+              icon: Icon(
+                Icons.delete_outline,
+                size: 16,
+                color: theme.colorScheme.error,
+              ),
+              tooltip: '削除',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28),
+              onPressed: onDelete,
+            ),
+          ],
+        ),
+        onTap: onTap,
+      ),
+    );
   }
 }

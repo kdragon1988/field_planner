@@ -4,18 +4,25 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../data/models/basemap.dart';
+import '../../data/models/drone_formation.dart';
+import '../../data/models/geo_position.dart';
 import '../../infrastructure/webview/cesium_controller.dart';
+import '../providers/asset_provider.dart';
 import '../providers/basemap_provider.dart';
 import '../providers/cesium_provider.dart';
 import '../providers/measurement_provider.dart';
+import '../providers/placement_provider.dart';
+import '../providers/project_provider.dart';
 import '../providers/tileset_provider.dart';
 import '../widgets/cesium_map_widget.dart';
 import '../widgets/dialogs/tileset_import_dialog.dart';
 import '../widgets/panels/layer_panel.dart';
+import '../widgets/panels/drone_show_panel.dart';
 import '../widgets/panels/asset_palette.dart';
 import '../widgets/panels/measurement_panel.dart';
 import '../widgets/panels/placement_inspector.dart';
 import '../widgets/panels/tileset_inspector.dart';
+import '../widgets/panels/drone_formation_inspector.dart';
 
 /// メイン画面
 ///
@@ -47,10 +54,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
   // 2D/3Dモード状態
   String _sceneMode = '3d';
 
+  // プレゼンテーションモード開始時のカメラ位置
+  CameraPosition? _savedCameraPosition;
+
   @override
   void initState() {
     super.initState();
-    _leftPanelTabController = TabController(length: 3, vsync: this);
+    _leftPanelTabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -59,9 +69,26 @@ class _MainScreenState extends ConsumerState<MainScreen>
     super.dispose();
   }
 
+  /// プレゼンテーションモードの切り替え
+  void _togglePresentationMode() {
+    if (!_presentationMode) {
+      // プレゼンテーションモードに入る前にカメラ位置を保存
+      final currentPosition = ref.read(cameraPositionProvider);
+      _savedCameraPosition = currentPosition;
+    }
+    setState(() => _presentationMode = !_presentationMode);
+  }
+
   @override
   Widget build(BuildContext context) {
     final cameraPosition = ref.watch(cameraPositionProvider);
+
+    // プロジェクト状態を監視してTilesetNotifierにパスを設定
+    final projectState = ref.watch(projectNotifierProvider);
+    if (projectState is ProjectLoadedState) {
+      final tilesetNotifier = ref.read(tilesetProvider.notifier);
+      tilesetNotifier.setProjectPath(projectState.projectPath);
+    }
 
     return KeyboardListener(
       focusNode: FocusNode()..requestFocus(),
@@ -123,7 +150,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
     // F11: プレゼンテーションモード
     else if (event.logicalKey == LogicalKeyboardKey.f11) {
-      setState(() => _presentationMode = !_presentationMode);
+      _togglePresentationMode();
     }
     // D: 距離計測
     else if (event.logicalKey == LogicalKeyboardKey.keyD) {
@@ -264,9 +291,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
           IconButton(
             icon: const Icon(Icons.fullscreen),
             tooltip: 'プレゼンテーションモード (F11)',
-            onPressed: () {
-              setState(() => _presentationMode = true);
-            },
+            onPressed: _togglePresentationMode,
           ),
         ],
       ),
@@ -313,8 +338,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
         children: [
           TabBar(
             controller: _leftPanelTabController,
+            isScrollable: true,
             tabs: const [
               Tab(text: 'レイヤー'),
+              Tab(text: 'ドローン'),
               Tab(text: 'アセット'),
               Tab(text: '計測'),
             ],
@@ -324,6 +351,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
               controller: _leftPanelTabController,
               children: const [
                 LayerPanel(),
+                DroneShowPanel(),
                 AssetPalette(),
                 MeasurementPanel(),
               ],
@@ -358,7 +386,33 @@ class _MainScreenState extends ConsumerState<MainScreen>
             ref.read(measurementProvider.notifier).updateController(controller);
 
             // TilesetプロバイダーにCesiumControllerを設定
-            ref.read(tilesetProvider.notifier).setController(controller);
+            final tilesetNotifier = ref.read(tilesetProvider.notifier);
+            tilesetNotifier.setController(controller);
+
+            // プロジェクトパスを設定
+            final projectState = ref.read(projectNotifierProvider);
+            if (projectState is ProjectLoadedState) {
+              tilesetNotifier.setProjectPath(projectState.projectPath);
+            }
+
+            // 配置済みドローンフォーメーション・3Dタイルを読み込み
+            Future.delayed(const Duration(milliseconds: 500), () {
+              final placementController = ref.read(placementControllerProvider);
+              placementController?.loadPlacedDroneFormations();
+
+              // 3Dタイルを読み込み
+              tilesetNotifier.loadTilesets();
+
+              // プレゼンテーションモード時は保存したカメラ位置へ移動
+              if (_savedCameraPosition != null) {
+                controller.flyTo(
+                  longitude: _savedCameraPosition!.longitude,
+                  latitude: _savedCameraPosition!.latitude,
+                  height: _savedCameraPosition!.height ?? 1000,
+                  duration: 0.0, // 即座に移動
+                );
+              }
+            });
           },
         ),
 
@@ -370,9 +424,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
             child: IconButton.filled(
               icon: const Icon(Icons.fullscreen_exit),
               tooltip: 'プレゼンテーションモードを終了',
-              onPressed: () {
-                setState(() => _presentationMode = false);
-              },
+              onPressed: _togglePresentationMode,
             ),
           ),
 
@@ -466,6 +518,30 @@ class _MainScreenState extends ConsumerState<MainScreen>
   Widget _buildRightPanel() {
     final tilesetState = ref.watch(tilesetProvider);
     final hasSelectedTileset = tilesetState.selectedTilesetId != null;
+    final selectedDroneId = ref.watch(selectedDroneFormationIdProvider);
+    final placedFormationsAsync = ref.watch(placedDroneFormationsProvider);
+
+    // 選択中のドローンフォーメーションを取得
+    PlacedDroneFormation? selectedDroneFormation;
+    if (selectedDroneId != null) {
+      selectedDroneFormation = placedFormationsAsync.whenOrNull(
+        data: (formations) => formations.where((f) => f.id == selectedDroneId).firstOrNull,
+      );
+    }
+
+    // 表示するパネルを決定
+    String title;
+    Widget content;
+    if (hasSelectedTileset) {
+      title = '3Dモデル設定';
+      content = const TilesetInspector();
+    } else if (selectedDroneFormation != null) {
+      title = 'ドローンショー設定';
+      content = DroneFormationInspector(placedFormation: selectedDroneFormation);
+    } else {
+      title = 'プロパティ';
+      content = const PlacementInspector();
+    }
 
     return Container(
       width: _rightPanelWidth,
@@ -481,16 +557,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
           Padding(
             padding: const EdgeInsets.all(12),
             child: Text(
-              hasSelectedTileset ? '3Dモデル設定' : 'プロパティ',
+              title,
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
           const Divider(height: 1),
-          Expanded(
-            child: hasSelectedTileset
-                ? const TilesetInspector()
-                : const PlacementInspector(),
-          ),
+          Expanded(child: content),
         ],
       ),
     );

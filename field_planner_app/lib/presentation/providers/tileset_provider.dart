@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -103,6 +106,42 @@ class TilesetLayer {
       clipGoogleTiles: clipGoogleTiles ?? this.clipGoogleTiles,
     );
   }
+
+  /// JSONからTilesetLayerを生成
+  factory TilesetLayer.fromJson(Map<String, dynamic> json) {
+    return TilesetLayer(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      tilesetJsonPath: json['tilesetJsonPath'] as String,
+      folderPath: json['folderPath'] as String,
+      visible: json['visible'] as bool? ?? true,
+      opacity: (json['opacity'] as num?)?.toDouble() ?? 1.0,
+      center: json['center'] != null
+          ? GeoPosition.fromJson(json['center'] as Map<String, dynamic>)
+          : null,
+      radius: (json['radius'] as num?)?.toDouble(),
+      heightOffset: (json['heightOffset'] as num?)?.toDouble() ?? 0.0,
+      screenSpaceError: (json['screenSpaceError'] as num?)?.toDouble() ?? 2.0,
+      clipGoogleTiles: json['clipGoogleTiles'] as bool? ?? true,
+    );
+  }
+
+  /// TilesetLayerをJSONに変換
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'tilesetJsonPath': tilesetJsonPath,
+      'folderPath': folderPath,
+      'visible': visible,
+      'opacity': opacity,
+      if (center != null) 'center': center!.toJson(),
+      if (radius != null) 'radius': radius,
+      'heightOffset': heightOffset,
+      'screenSpaceError': screenSpaceError,
+      'clipGoogleTiles': clipGoogleTiles,
+    };
+  }
 }
 
 /// Tilesetプロバイダーの状態
@@ -155,8 +194,14 @@ class TilesetState {
 /// Tilesetプロバイダー
 class TilesetNotifier extends StateNotifier<TilesetState> with LoggableMixin {
   CesiumController? _cesiumController;
+  String? _projectPath;
 
   TilesetNotifier() : super(const TilesetState());
+
+  /// プロジェクトパスを設定
+  void setProjectPath(String? path) {
+    _projectPath = path;
+  }
 
   /// CesiumControllerを設定
   void setController(CesiumController controller) {
@@ -227,6 +272,9 @@ class TilesetNotifier extends StateNotifier<TilesetState> with LoggableMixin {
       show: true,
     );
 
+    // プロジェクトに保存
+    await saveTilesets();
+
     logInfo('Tileset added: $name ($id)');
   }
 
@@ -235,6 +283,12 @@ class TilesetNotifier extends StateNotifier<TilesetState> with LoggableMixin {
   
   // クリッピング待ちのTileset
   final Map<String, bool> _pendingClipping = {};
+
+  // 高さオフセット待ちのTileset
+  final Map<String, double> _pendingHeightOffset = {};
+
+  // 画質設定待ちのTileset
+  final Map<String, double> _pendingScreenSpaceError = {};
 
   /// 3D Tilesを削除
   Future<void> removeTileset(String id) async {
@@ -268,6 +322,9 @@ class TilesetNotifier extends StateNotifier<TilesetState> with LoggableMixin {
     state = state.copyWith(
       layers: state.layers.where((l) => l.id != id).toList(),
     );
+
+    // プロジェクトに保存
+    await saveTilesets();
 
     logInfo('Tileset removed: $id');
   }
@@ -357,6 +414,9 @@ class TilesetNotifier extends StateNotifier<TilesetState> with LoggableMixin {
       }).toList(),
     );
 
+    // プロジェクトに保存
+    await saveTilesets();
+
     logInfo('Tileset height adjusted: $id, offset: $heightOffset');
   }
 
@@ -377,6 +437,9 @@ class TilesetNotifier extends StateNotifier<TilesetState> with LoggableMixin {
         return l;
       }).toList(),
     );
+
+    // プロジェクトに保存
+    await saveTilesets();
 
     logInfo('Tileset quality adjusted: $id, SSE: $screenSpaceError');
   }
@@ -429,6 +492,26 @@ class TilesetNotifier extends StateNotifier<TilesetState> with LoggableMixin {
       }).toList(),
     );
 
+    // 高さオフセットを適用（保存されていた場合）
+    final heightOffset = _pendingHeightOffset.remove(id);
+    if (heightOffset != null && heightOffset != 0) {
+      logInfo('Applying pending height offset: $id, offset: $heightOffset');
+      _cesiumController?.adjustTilesetPosition(
+        id: id,
+        heightOffset: heightOffset,
+      );
+    }
+
+    // 画質設定を適用（保存されていた場合）
+    final screenSpaceError = _pendingScreenSpaceError.remove(id);
+    if (screenSpaceError != null && screenSpaceError != 2.0) {
+      logInfo('Applying pending screen space error: $id, SSE: $screenSpaceError');
+      _cesiumController?.adjustTilesetQuality(
+        id: id,
+        screenSpaceError: screenSpaceError,
+      );
+    }
+
     // Google 3D Tilesをクリッピング（オプションに応じて）
     final shouldClip = _pendingClipping.remove(id) ?? true;
     if (shouldClip) {
@@ -458,6 +541,101 @@ class TilesetNotifier extends StateNotifier<TilesetState> with LoggableMixin {
 
   void _onGoogleTilesetVisibilityChanged(bool visible) {
     state = state.copyWith(showGoogleTileset: visible);
+  }
+
+  // ============================================
+  // 永続化
+  // ============================================
+
+  /// 3Dタイル設定をプロジェクトに保存
+  Future<void> saveTilesets() async {
+    logInfo('saveTilesets called, projectPath: $_projectPath');
+    if (_projectPath == null) {
+      logWarning('Cannot save tilesets: projectPath is null');
+      return;
+    }
+
+    final file = File('$_projectPath/tilesets.json');
+    final data = {
+      'tilesets': state.layers.map((l) => l.toJson()).toList(),
+    };
+    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(data));
+    logInfo('Tilesets saved: ${state.layers.length} layers to ${file.path}');
+  }
+
+  /// 3Dタイル設定をプロジェクトから読み込み、CesiumJSに追加
+  Future<void> loadTilesets() async {
+    logInfo('loadTilesets called, projectPath: $_projectPath, controller: ${_cesiumController != null}');
+    if (_projectPath == null || _cesiumController == null) {
+      logWarning('Cannot load tilesets: projectPath=$_projectPath, controller=${_cesiumController != null}');
+      return;
+    }
+
+    final file = File('$_projectPath/tilesets.json');
+    if (!await file.exists()) {
+      logInfo('No tilesets.json found at ${file.path}');
+      return;
+    }
+
+    try {
+      final content = await file.readAsString();
+      final data = jsonDecode(content) as Map<String, dynamic>;
+      final tilesetsJson = data['tilesets'] as List<dynamic>? ?? [];
+
+      logInfo('Loading ${tilesetsJson.length} tilesets...');
+
+      for (final json in tilesetsJson) {
+        final layer = TilesetLayer.fromJson(json as Map<String, dynamic>);
+
+        // ファイルが存在するか確認
+        final tilesetFile = File(layer.tilesetJsonPath);
+        if (!await tilesetFile.exists()) {
+          logWarning('Tileset file not found: ${layer.tilesetJsonPath}');
+          continue;
+        }
+
+        // ローカルファイルサーバーを起動
+        final fileServer = LocalFileServer.instance;
+        if (!fileServer.isRunning) {
+          await fileServer.start();
+        }
+
+        // URLを取得
+        final url = fileServer.getTilesetUrl(layer.tilesetJsonPath);
+
+        // 状態に追加
+        state = state.copyWith(
+          layers: [...state.layers, layer],
+        );
+
+        // flyToはしない、クリッピングは設定を使用
+        _pendingFlyTo[layer.id] = false;
+        _pendingClipping[layer.id] = layer.clipGoogleTiles;
+
+        // 高さオフセットと画質設定を保留（タイルセットロード完了後に適用）
+        if (layer.heightOffset != 0) {
+          _pendingHeightOffset[layer.id] = layer.heightOffset;
+          logInfo('Pending height offset for ${layer.id}: ${layer.heightOffset}');
+        }
+        if (layer.screenSpaceError != 2.0) {
+          _pendingScreenSpaceError[layer.id] = layer.screenSpaceError;
+          logInfo('Pending SSE for ${layer.id}: ${layer.screenSpaceError}');
+        }
+
+        // CesiumJSに追加（ロード完了後に_onTilesetAddedが呼ばれ、そこでオフセット等を適用）
+        await _cesiumController!.addLocalTileset(
+          id: layer.id,
+          url: url,
+          name: layer.name,
+          opacity: layer.opacity,
+          show: layer.visible,
+        );
+
+        logInfo('Tileset loaded: ${layer.name}');
+      }
+    } catch (e) {
+      logError('Failed to load tilesets: $e');
+    }
   }
 }
 

@@ -23,6 +23,25 @@ let measurementPoints = [];
 let tempMeasurementEntity = null;
 let tempPointEntities = [];
 
+// 配置物管理
+const placementEntities = new Map();
+let placementMode = null; // 'place', 'move', 'rotate', 'scale'
+let previewEntity = null;
+let selectedPlacementId = null;
+let currentPlacementAssetId = null;
+
+// スナップ設定
+const snapSettings = {
+  gridEnabled: true,
+  gridSize: 1.0, // メートル
+  groundEnabled: true,
+  angleEnabled: true,
+  angleStep: 15, // 度
+};
+
+// ドローンフォーメーション管理
+const droneFormations = new Map();
+
 /**
  * Cesium Viewerを初期化
  * @param {Object} config - 初期設定
@@ -1724,6 +1743,663 @@ function getCentroid(positions) {
 }
 
 // ============================================
+// 配置物管理機能
+// ============================================
+
+/**
+ * 配置物を追加
+ * @param {Object} placement - 配置物データ
+ * @param {string} modelUrl - モデルURL
+ */
+function addPlacement(placement, modelUrl) {
+  if (!viewer) return;
+
+  const position = Cesium.Cartesian3.fromDegrees(
+    placement.position.longitude,
+    placement.position.latitude,
+    placement.position.height || 0
+  );
+
+  const heading = Cesium.Math.toRadians(placement.rotation?.heading || 0);
+  const pitch = Cesium.Math.toRadians(placement.rotation?.pitch || 0);
+  const roll = Cesium.Math.toRadians(placement.rotation?.roll || 0);
+  const orientation = Cesium.Transforms.headingPitchRollQuaternion(
+    position,
+    new Cesium.HeadingPitchRoll(heading, pitch, roll)
+  );
+
+  const scale = placement.scale?.x || 1.0;
+
+  const entity = viewer.entities.add({
+    id: placement.id,
+    name: placement.name,
+    position: position,
+    orientation: orientation,
+    model: {
+      uri: modelUrl,
+      scale: scale,
+      minimumPixelSize: 64,
+      maximumScale: 20000,
+    },
+    show: placement.visible !== false,
+  });
+
+  placementEntities.set(placement.id, {
+    entity: entity,
+    placement: placement,
+    modelUrl: modelUrl,
+  });
+
+  console.log('[CesiumBridge] Placement added:', placement.id);
+  sendToFlutter('placementAdded', { id: placement.id });
+}
+
+/**
+ * 配置物を削除
+ * @param {string} placementId - 配置物ID
+ */
+function removePlacement(placementId) {
+  if (!viewer) return;
+
+  const data = placementEntities.get(placementId);
+  if (data) {
+    viewer.entities.remove(data.entity);
+    placementEntities.delete(placementId);
+    console.log('[CesiumBridge] Placement removed:', placementId);
+  }
+}
+
+/**
+ * 配置物を更新
+ * @param {Object} placement - 配置物データ
+ */
+function updatePlacement(placement) {
+  const data = placementEntities.get(placement.id);
+  if (!data) return;
+
+  const position = Cesium.Cartesian3.fromDegrees(
+    placement.position.longitude,
+    placement.position.latitude,
+    placement.position.height || 0
+  );
+
+  const heading = Cesium.Math.toRadians(placement.rotation?.heading || 0);
+  const pitch = Cesium.Math.toRadians(placement.rotation?.pitch || 0);
+  const roll = Cesium.Math.toRadians(placement.rotation?.roll || 0);
+  const orientation = Cesium.Transforms.headingPitchRollQuaternion(
+    position,
+    new Cesium.HeadingPitchRoll(heading, pitch, roll)
+  );
+
+  data.entity.position = position;
+  data.entity.orientation = orientation;
+  data.entity.model.scale = placement.scale?.x || 1.0;
+  data.entity.show = placement.visible !== false;
+  data.placement = placement;
+
+  console.log('[CesiumBridge] Placement updated:', placement.id);
+}
+
+/**
+ * 配置モードを開始
+ * @param {string} assetId - アセットID
+ * @param {string} modelUrl - モデルURL
+ */
+function startPlacementMode(assetId, modelUrl) {
+  if (!viewer) return;
+
+  // 既存のプレビューを削除
+  if (previewEntity) {
+    viewer.entities.remove(previewEntity);
+  }
+
+  placementMode = 'place';
+  currentPlacementAssetId = assetId;
+
+  // プレビューエンティティを作成
+  previewEntity = viewer.entities.add({
+    id: 'preview_' + assetId,
+    position: Cesium.Cartesian3.ZERO,
+    model: {
+      uri: modelUrl,
+      scale: 1.0,
+      color: Cesium.Color.WHITE.withAlpha(0.7),
+      silhouetteColor: Cesium.Color.LIME,
+      silhouetteSize: 2,
+    },
+    show: false,
+  });
+
+  // マウス移動イベント
+  viewer.screenSpaceEventHandler.setInputAction((movement) => {
+    if (placementMode !== 'place') return;
+
+    const position = getGroundPosition(movement.endPosition);
+    if (position) {
+      const snappedPosition = applyGridSnap(position);
+      previewEntity.position = snappedPosition;
+      previewEntity.show = true;
+    }
+  }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+  // クリックイベントで配置確定
+  viewer.screenSpaceEventHandler.setInputAction((click) => {
+    if (placementMode !== 'place') return;
+
+    const position = getGroundPosition(click.position);
+    if (position) {
+      const snappedPosition = applyGridSnap(position);
+      const cartographic = Cesium.Cartographic.fromCartesian(snappedPosition);
+
+      sendToFlutter('placementConfirmed', {
+        assetId: currentPlacementAssetId,
+        position: {
+          longitude: Cesium.Math.toDegrees(cartographic.longitude),
+          latitude: Cesium.Math.toDegrees(cartographic.latitude),
+          height: cartographic.height,
+        }
+      });
+    }
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+  // 右クリックでキャンセル
+  viewer.screenSpaceEventHandler.setInputAction(() => {
+    cancelPlacementMode();
+    sendToFlutter('placementCancelled', {});
+  }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+
+  console.log('[CesiumBridge] Placement mode started:', assetId);
+  sendToFlutter('placementModeStarted', { assetId: assetId });
+}
+
+/**
+ * 配置モードをキャンセル
+ */
+function cancelPlacementMode() {
+  if (previewEntity) {
+    viewer.entities.remove(previewEntity);
+    previewEntity = null;
+  }
+  placementMode = null;
+  currentPlacementAssetId = null;
+
+  // イベントハンドラを通常に戻す
+  resetPlacementEventHandlers();
+  console.log('[CesiumBridge] Placement mode cancelled');
+}
+
+/**
+ * 配置イベントハンドラをリセット
+ */
+function resetPlacementEventHandlers() {
+  if (!viewer) return;
+
+  // クリックイベントを通常のmapClickedに戻す
+  viewer.screenSpaceEventHandler.setInputAction((click) => {
+    // 配置物のピック
+    const pickedObject = viewer.scene.pick(click.position);
+    if (Cesium.defined(pickedObject) && pickedObject.id) {
+      const entityId = pickedObject.id.id || pickedObject.id;
+      if (placementEntities.has(entityId)) {
+        selectPlacement(entityId);
+        return;
+      }
+    }
+
+    // 選択解除
+    deselectPlacement();
+
+    // 通常のマップクリック
+    const cartesian = viewer.camera.pickEllipsoid(click.position);
+    if (cartesian) {
+      const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+      sendToFlutter('mapClicked', {
+        longitude: Cesium.Math.toDegrees(cartographic.longitude),
+        latitude: Cesium.Math.toDegrees(cartographic.latitude),
+        height: cartographic.height || 0
+      });
+    }
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+  // 移動イベントを削除
+  viewer.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+  viewer.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+}
+
+/**
+ * 配置物を選択
+ * @param {string} placementId - 配置物ID
+ */
+function selectPlacement(placementId) {
+  // 既存の選択を解除
+  if (selectedPlacementId) {
+    const prevData = placementEntities.get(selectedPlacementId);
+    if (prevData && prevData.entity.model) {
+      prevData.entity.model.silhouetteColor = Cesium.Color.TRANSPARENT;
+      prevData.entity.model.silhouetteSize = 0;
+    }
+  }
+
+  selectedPlacementId = placementId;
+
+  // 新しい選択をハイライト
+  const data = placementEntities.get(placementId);
+  if (data && data.entity.model) {
+    data.entity.model.silhouetteColor = Cesium.Color.YELLOW;
+    data.entity.model.silhouetteSize = 3;
+  }
+
+  sendToFlutter('placementSelected', { id: placementId });
+}
+
+/**
+ * 配置物の選択を解除
+ */
+function deselectPlacement() {
+  if (selectedPlacementId) {
+    const data = placementEntities.get(selectedPlacementId);
+    if (data && data.entity.model) {
+      data.entity.model.silhouetteColor = Cesium.Color.TRANSPARENT;
+      data.entity.model.silhouetteSize = 0;
+    }
+    selectedPlacementId = null;
+    sendToFlutter('placementDeselected', {});
+  }
+}
+
+/**
+ * 配置物にズーム
+ * @param {string} placementId - 配置物ID
+ */
+function zoomToPlacement(placementId) {
+  if (!viewer) return;
+
+  const data = placementEntities.get(placementId);
+  if (data) {
+    viewer.flyTo(data.entity, {
+      duration: 1.5,
+      offset: new Cesium.HeadingPitchRange(0, -0.5, 50)
+    });
+  }
+}
+
+/**
+ * スナップ設定を更新
+ * @param {Object} settings - 設定
+ */
+function updateSnapSettings(settings) {
+  Object.assign(snapSettings, settings);
+  console.log('[CesiumBridge] Snap settings updated:', snapSettings);
+}
+
+/**
+ * グリッドスナップを適用
+ * @param {Cesium.Cartesian3} position - 元の位置
+ * @returns {Cesium.Cartesian3} スナップ後の位置
+ */
+function applyGridSnap(position) {
+  if (!snapSettings.gridEnabled) return position;
+
+  const cartographic = Cesium.Cartographic.fromCartesian(position);
+
+  // メートル単位でスナップ
+  const latRad = cartographic.latitude;
+  const metersPerDegreeLon = 111320 * Math.cos(latRad);
+  const metersPerDegreeLat = 110540;
+
+  const gridSize = snapSettings.gridSize;
+  const lonStep = gridSize / metersPerDegreeLon;
+  const latStep = gridSize / metersPerDegreeLat;
+
+  const snappedLon = Math.round(cartographic.longitude / lonStep) * lonStep;
+  const snappedLat = Math.round(cartographic.latitude / latStep) * latStep;
+
+  return Cesium.Cartesian3.fromRadians(
+    snappedLon,
+    snappedLat,
+    cartographic.height
+  );
+}
+
+/**
+ * 角度スナップを適用
+ * @param {number} angle - 元の角度（度）
+ * @returns {number} スナップ後の角度
+ */
+function applyAngleSnap(angle) {
+  if (!snapSettings.angleEnabled) return angle;
+  const step = snapSettings.angleStep;
+  return Math.round(angle / step) * step;
+}
+
+// ============================================
+// ドローンフォーメーション管理機能
+// ============================================
+
+/**
+ * 輝度を適用した色を計算（ソリッドカラー）
+ * シンプルな明るさ調整、アルファは常に1.0
+ * @param {Cesium.Color} baseColor - 元の色
+ * @param {number} intensity - 輝度（0.2-2.0、1.0が基準）
+ * @returns {Cesium.Color} 輝度適用後の色
+ */
+function applyGlowIntensity(baseColor, intensity) {
+  let r = baseColor.red;
+  let g = baseColor.green;
+  let b = baseColor.blue;
+  
+  if (intensity < 1.0) {
+    // 暗くする（RGB全体を乗算）
+    r *= intensity;
+    g *= intensity;
+    b *= intensity;
+  } else if (intensity > 1.0) {
+    // 明るくする（RGBに加算、元の色の比率を保持）
+    const boost = (intensity - 1.0) * 0.5; // 控えめに加算
+    r = Math.min(r + boost * (1 - r), 1.0);
+    g = Math.min(g + boost * (1 - g), 1.0);
+    b = Math.min(b + boost * (1 - b), 1.0);
+  }
+  
+  // アルファは常に1.0（完全不透明）でソリッドに
+  return new Cesium.Color(r, g, b, 1.0);
+}
+
+/**
+ * HSVからCesium.Colorに変換
+ * @param {number} h - Hue (0-360)
+ * @param {number} s - Saturation (0-1)
+ * @param {number} v - Value (0-1)
+ * @param {number} a - Alpha (0-1)
+ * @returns {Cesium.Color}
+ */
+function hsvToColor(h, s, v, a) {
+  const c = v * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = v - c;
+  
+  let r, g, b;
+  if (h < 60) {
+    [r, g, b] = [c, x, 0];
+  } else if (h < 120) {
+    [r, g, b] = [x, c, 0];
+  } else if (h < 180) {
+    [r, g, b] = [0, c, x];
+  } else if (h < 240) {
+    [r, g, b] = [0, x, c];
+  } else if (h < 300) {
+    [r, g, b] = [x, 0, c];
+  } else {
+    [r, g, b] = [c, 0, x];
+  }
+  
+  return new Cesium.Color(r + m, g + m, b + m, a);
+}
+
+/**
+ * ドローンフォーメーションを追加（光る球として描画）
+ * @param {Object} config - 設定
+ * @param {string} config.id - フォーメーションID
+ * @param {string} config.name - フォーメーション名
+ * @param {Array} config.drones - ドローンデータ配列 [{id, x, y, r, g, b, a}, ...]
+ * @param {Object} config.basePosition - 基準位置 {longitude, latitude}
+ * @param {number} config.altitude - 高度（メートル）
+ * @param {number} config.heading - 方位角（度、水平回転）
+ * @param {number} config.tilt - チルト（度、垂直回転、-90〜90）
+ * @param {number} config.scale - スケール
+ * @param {number} config.pointSize - ポイントサイズ（ピクセル）
+ * @param {number} config.glowIntensity - 輝度（発光の濃さ、0.2-2.0）
+ * @param {string} config.customColor - カスタム色（HEX、nullの場合は個別色）
+ * @param {boolean} config.useIndividualColors - 個別色を使用するか
+ */
+function addDroneFormation(config) {
+  if (!viewer) return;
+
+  console.log('[CesiumBridge] Adding drone formation:', config.id, 'drones:', config.drones.length);
+
+  const basePosition = config.basePosition;
+  const altitude = config.altitude || 50;
+  const heading = Cesium.Math.toRadians(config.heading || 0);
+  const tilt = Cesium.Math.toRadians(config.tilt || 0); // 垂直回転
+  const scale = config.scale || 1.0;
+  const pointSize = config.pointSize || 5;
+  const glowIntensity = config.glowIntensity || 1.0;
+  const useIndividualColors = config.useIndividualColors !== false;
+
+  // カスタム色をパース
+  let customColor = null;
+  if (config.customColor) {
+    customColor = Cesium.Color.fromCssColorString(config.customColor);
+  }
+
+  // エンティティコレクションを作成
+  const entities = [];
+  const cosHeading = Math.cos(heading);
+  const sinHeading = Math.sin(heading);
+  const cosTilt = Math.cos(tilt);
+  const sinTilt = Math.sin(tilt);
+
+  // 緯度経度の1メートルあたりの度数を計算
+  const baseLatRad = Cesium.Math.toRadians(basePosition.latitude);
+  const metersPerDegreeLon = 111320 * Math.cos(baseLatRad);
+  const metersPerDegreeLat = 110540;
+
+  for (const drone of config.drones) {
+    // 相対座標をスケール適用
+    let x = drone.x * scale;
+    let y = drone.y * scale;
+    let z = 0; // 初期z座標は0
+
+    // チルト（垂直回転）を適用（Y軸周り）
+    const tiltedY = y * cosTilt - z * sinTilt;
+    const tiltedZ = y * sinTilt + z * cosTilt;
+    y = tiltedY;
+    z = tiltedZ;
+
+    // 方位角（水平回転）を適用
+    const rotatedX = x * cosHeading - y * sinHeading;
+    const rotatedY = x * sinHeading + y * cosHeading;
+
+    // 経度・緯度・高度に変換
+    const lon = basePosition.longitude + (rotatedX / metersPerDegreeLon);
+    const lat = basePosition.latitude + (rotatedY / metersPerDegreeLat);
+    const droneAltitude = altitude + z;
+
+    // 色を決定
+    let baseColor;
+    if (useIndividualColors && !customColor) {
+      baseColor = Cesium.Color.fromBytes(drone.r, drone.g, drone.b, drone.a || 255);
+    } else if (customColor) {
+      baseColor = customColor;
+    } else {
+      baseColor = Cesium.Color.WHITE;
+    }
+
+    // 輝度を適用（HSV色空間でValue調整、彩度も考慮して白飛びを防ぐ）
+    const glowColor = applyGlowIntensity(baseColor, glowIntensity);
+
+    const entity = viewer.entities.add({
+      id: `${config.id}_drone_${drone.id}`,
+      position: Cesium.Cartesian3.fromDegrees(lon, lat, droneAltitude),
+      point: {
+        pixelSize: pointSize,
+        color: glowColor,
+        outlineColor: Cesium.Color.TRANSPARENT,
+        outlineWidth: 0,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        scaleByDistance: new Cesium.NearFarScalar(50, 1.2, 2000, 0.3),
+      },
+    });
+
+    entities.push({ main: entity, glow: null, droneData: drone, originalPos: { x: drone.x, y: drone.y } });
+  }
+
+  // フォーメーション情報を保存
+  droneFormations.set(config.id, {
+    config: config,
+    entities: entities,
+    glowIntensity: glowIntensity,
+    tilt: config.tilt || 0,
+  });
+
+  console.log('[CesiumBridge] Drone formation added:', config.id, 'entities:', entities.length);
+  sendToFlutter('droneFormationAdded', { 
+    id: config.id, 
+    droneCount: entities.length 
+  });
+}
+
+/**
+ * ドローンフォーメーションを削除
+ * @param {string} formationId - フォーメーションID
+ */
+function removeDroneFormation(formationId) {
+  if (!viewer) return;
+
+  const data = droneFormations.get(formationId);
+  if (data) {
+    // 全エンティティを削除
+    for (const entityData of data.entities) {
+      if (entityData.main) {
+        try { viewer.entities.remove(entityData.main); } catch (e) {}
+      }
+      if (entityData.glow) {
+        try { viewer.entities.remove(entityData.glow); } catch (e) {}
+      }
+    }
+    droneFormations.delete(formationId);
+    console.log('[CesiumBridge] Drone formation removed:', formationId);
+    sendToFlutter('droneFormationRemoved', { id: formationId });
+  }
+}
+
+/**
+ * ドローンフォーメーションを更新
+ * @param {Object} config - 設定（addDroneFormationと同じ形式）
+ */
+function updateDroneFormation(config) {
+  // 既存のフォーメーションを削除して再作成
+  removeDroneFormation(config.id);
+  addDroneFormation(config);
+}
+
+/**
+ * ドローンフォーメーションのスタイルを更新
+ * @param {string} formationId - フォーメーションID
+ * @param {Object} options - オプション
+ * @param {number} options.pointSize - ポイントサイズ（1-10px）
+ * @param {number} options.glowIntensity - 輝度（発光の濃さ、0.2-2.0）
+ * @param {string} options.customColor - カスタム色
+ * @param {boolean} options.useIndividualColors - 個別色を使用
+ * @param {boolean} options.visible - 表示フラグ
+ */
+function updateDroneFormationStyle(formationId, options) {
+  const data = droneFormations.get(formationId);
+  if (!data) return;
+
+  let customColor = null;
+  if (options.customColor) {
+    customColor = Cesium.Color.fromCssColorString(options.customColor);
+  }
+
+  const config = data.config;
+  const useIndividualColors = options.useIndividualColors !== undefined 
+    ? options.useIndividualColors 
+    : config.useIndividualColors;
+  const glowIntensity = options.glowIntensity !== undefined
+    ? options.glowIntensity
+    : (data.glowIntensity || 1.0);
+  const pointSize = options.pointSize !== undefined
+    ? options.pointSize
+    : config.pointSize;
+
+  for (let i = 0; i < data.entities.length; i++) {
+    const entityData = data.entities[i];
+    const drone = entityData.droneData || config.drones[i];
+
+    // 表示/非表示
+    if (options.visible !== undefined) {
+      if (entityData.main) entityData.main.show = options.visible;
+      if (entityData.glow) entityData.glow.show = options.visible;
+    }
+
+    // 色を決定
+    let baseColor;
+    if (customColor) {
+      baseColor = customColor;
+    } else if (useIndividualColors && drone) {
+      baseColor = Cesium.Color.fromBytes(drone.r, drone.g, drone.b, drone.a || 255);
+    } else {
+      baseColor = Cesium.Color.WHITE;
+    }
+
+    // 輝度を適用（HSV色空間でValue調整、彩度も考慮して白飛びを防ぐ）
+    const glowColor = applyGlowIntensity(baseColor, glowIntensity);
+
+    // メインポイント更新（サイズは変えない、色のみ調整）
+    if (entityData.main && entityData.main.point) {
+      entityData.main.point.pixelSize = pointSize;
+      entityData.main.point.color = glowColor;
+    }
+  }
+
+  // 設定を更新
+  if (options.pointSize !== undefined) {
+    config.pointSize = options.pointSize;
+  }
+  if (options.glowIntensity !== undefined) {
+    data.glowIntensity = options.glowIntensity;
+  }
+  if (options.customColor !== undefined) {
+    config.customColor = options.customColor;
+  }
+  if (options.useIndividualColors !== undefined) {
+    config.useIndividualColors = options.useIndividualColors;
+  }
+
+  console.log('[CesiumBridge] Drone formation style updated:', formationId);
+}
+
+/**
+ * ドローンフォーメーションの表示/非表示を切り替え
+ * @param {string} formationId - フォーメーションID
+ * @param {boolean} visible - 表示フラグ
+ */
+function setDroneFormationVisible(formationId, visible) {
+  const data = droneFormations.get(formationId);
+  if (!data) return;
+
+  for (const entityData of data.entities) {
+    if (entityData.main) entityData.main.show = visible;
+    if (entityData.glow) entityData.glow.show = visible;
+  }
+
+  console.log('[CesiumBridge] Drone formation visibility:', formationId, visible);
+}
+
+/**
+ * ドローンフォーメーションにズーム
+ * @param {string} formationId - フォーメーションID
+ */
+function zoomToDroneFormation(formationId) {
+  if (!viewer) return;
+
+  const data = droneFormations.get(formationId);
+  if (!data || data.entities.length === 0) return;
+
+  // 全ドローンを含むバウンディングスフィアを計算
+  const positions = data.entities
+    .filter(e => e.main)
+    .map(e => e.main.position.getValue(Cesium.JulianDate.now()));
+  const boundingSphere = Cesium.BoundingSphere.fromPoints(positions);
+
+  viewer.camera.flyToBoundingSphere(boundingSphere, {
+    duration: 1.5,
+    offset: new Cesium.HeadingPitchRange(0, -0.5, boundingSphere.radius * 2)
+  });
+}
+
+// ============================================
 // 通信処理
 // ============================================
 
@@ -1830,6 +2506,55 @@ function handleFlutterMessage(method, params) {
       break;
     case 'resetCameraControls':
       resetCameraControls();
+      break;
+    
+    // 配置物関連
+    case 'addPlacement':
+      addPlacement(params.placement, params.modelUrl);
+      break;
+    case 'removePlacement':
+      removePlacement(params.placementId);
+      break;
+    case 'updatePlacement':
+      updatePlacement(params.placement);
+      break;
+    case 'startPlacementMode':
+      startPlacementMode(params.assetId, params.modelUrl);
+      break;
+    case 'cancelPlacementMode':
+      cancelPlacementMode();
+      break;
+    case 'selectPlacement':
+      selectPlacement(params.placementId);
+      break;
+    case 'deselectPlacement':
+      deselectPlacement();
+      break;
+    case 'zoomToPlacement':
+      zoomToPlacement(params.placementId);
+      break;
+    case 'updateSnapSettings':
+      updateSnapSettings(params);
+      break;
+    
+    // ドローンフォーメーション関連
+    case 'addDroneFormation':
+      addDroneFormation(params);
+      break;
+    case 'removeDroneFormation':
+      removeDroneFormation(params.formationId);
+      break;
+    case 'updateDroneFormation':
+      updateDroneFormation(params);
+      break;
+    case 'updateDroneFormationStyle':
+      updateDroneFormationStyle(params.formationId, params.options);
+      break;
+    case 'setDroneFormationVisible':
+      setDroneFormationVisible(params.formationId, params.visible);
+      break;
+    case 'zoomToDroneFormation':
+      zoomToDroneFormation(params.formationId);
       break;
       
     default:

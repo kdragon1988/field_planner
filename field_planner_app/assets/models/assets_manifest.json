@@ -1,0 +1,262 @@
+{
+  "version": "1.0.0",
+  "description": "Field Planner 内蔵アセット定義",
+  "assets": [
+    {
+      "id": "tent_small",
+      "name": "小型テント",
+      "description": "標準的なイベント用小型テント（3m×3m）",
+      "category": "tent",
+      "modelPath": "models/tent_small.glb",
+      "thumbnailPath": "thumbnails/tent_small.png",
+      "dimensions": {
+        "width": 3.0,
+        "depth": 3.0,
+        "height": 2.5
+      },
+      "defaultScale": 1.0,
+      "tags": ["テント", "小型", "屋外", "イベント"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "tent_large",
+      "name": "大型テント",
+      "description": "イベント用大型テント（6m×6m）",
+      "category": "tent",
+      "modelPath": "models/tent_large.glb",
+      "thumbnailPath": "thumbnails/tent_large.png",
+      "dimensions": {
+        "width": 6.0,
+        "depth": 6.0,
+        "height": 3.5
+      },
+      "defaultScale": 1.0,
+      "tags": ["テント", "大型", "屋外", "イベント"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "stage_small",
+      "name": "小型ステージ",
+      "description": "小規模イベント用ステージ",
+      "category": "stage",
+      "modelPath": "models/stage_small.glb",
+      "thumbnailPath": "thumbnails/stage_small.png",
+      "dimensions": {
+        "width": 4.0,
+        "depth": 3.0,
+        "height": 0.6
+      },
+      "defaultScale": 1.0,
+      "tags": ["ステージ", "舞台", "小型"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "stage_basic",
+      "name": "基本ステージ",
+      "description": "標準的なイベント用ステージ",
+      "category": "stage",
+      "modelPath": "models/stage_basic.glb",
+      "thumbnailPath": "thumbnails/stage_basic.png",
+      "dimensions": {
+        "width": 8.0,
+        "depth": 6.0,
+        "height": 1.2
+      },
+      "defaultScale": 1.0,
+      "tags": ["ステージ", "舞台", "音響", "イベント"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "barrier_fence",
+      "name": "フェンスバリケード",
+      "description": "金属製仮設フェンス",
+      "category": "barrier",
+      "modelPath": "models/barrier_fence.glb",
+      "thumbnailPath": "thumbnails/barrier_fence.png",
+      "dimensions": {
+        "width": 2.0,
+        "depth": 0.1,
+        "height": 1.2
+      },
+      "defaultScale": 1.0,
+      "tags": ["バリケード", "フェンス", "柵", "金属", "安全"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "barrier_plastic",
+      "name": "プラスチックバリケード",
+      "description": "イベント用プラスチック製バリケード",
+      "category": "barrier",
+      "modelPath": "models/barrier_plastic.glb",
+      "thumbnailPath": "thumbnails/barrier_plastic.png",
+      "dimensions": {
+        "width": 2.0,
+        "depth": 0.5,
+        "height": 1.0
+      },
+      "defaultScale": 1.0,
+      "tags": ["バリケード", "柵", "プラスチック"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "cone_traffic",
+      "name": "カラーコーン",
+      "description": "交通整理用カラーコーン",
+      "category": "barrier",
+      "modelPath": "models/cone_traffic.glb",
+      "thumbnailPath": "thumbnails/cone_traffic.png",
+      "dimensions": {
+        "width": 0.35,
+        "depth": 0.35,
+        "height": 0.7
+      },
+      "defaultScale": 1.0,
+      "tags": ["コーン", "カラーコーン", "交通整理", "安全"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "table_folding",
+      "name": "折りたたみテーブル",
+      "description": "180cm折りたたみテーブル",
+      "category": "table",
+      "modelPath": "models/table_folding.glb",
+      "thumbnailPath": "thumbnails/table_folding.png",
+      "dimensions": {
+        "width": 1.8,
+        "depth": 0.6,
+        "height": 0.74
+      },
+      "defaultScale": 1.0,
+      "tags": ["テーブル", "机", "折りたたみ"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "table_round",
+      "name": "円形テーブル",
+      "description": "パーティー用円形テーブル（直径1.5m）",
+      "category": "table",
+      "modelPath": "models/table_round.glb",
+      "thumbnailPath": "thumbnails/table_round.png",
+      "dimensions": {
+        "width": 1.5,
+        "depth": 1.5,
+        "height": 0.75
+      },
+      "defaultScale": 1.0,
+      "tags": ["テーブル", "机", "円形", "パーティー"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "chair_folding",
+      "name": "折りたたみ椅子",
+      "description": "標準的な折りたたみ椅子",
+      "category": "chair",
+      "modelPath": "models/chair_folding.glb",
+      "thumbnailPath": "thumbnails/chair_folding.png",
+      "dimensions": {
+        "width": 0.45,
+        "depth": 0.45,
+        "height": 0.8
+      },
+      "defaultScale": 1.0,
+      "tags": ["椅子", "折りたたみ"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "chair_pipe",
+      "name": "パイプ椅子",
+      "description": "標準的なパイプ椅子",
+      "category": "chair",
+      "modelPath": "models/chair_pipe.glb",
+      "thumbnailPath": "thumbnails/chair_pipe.png",
+      "dimensions": {
+        "width": 0.45,
+        "depth": 0.45,
+        "height": 0.8
+      },
+      "defaultScale": 1.0,
+      "tags": ["椅子", "パイプ椅子"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "light_stand",
+      "name": "照明スタンド",
+      "description": "イベント用照明スタンド",
+      "category": "lighting",
+      "modelPath": "models/light_stand.glb",
+      "thumbnailPath": "thumbnails/light_stand.png",
+      "dimensions": {
+        "width": 0.5,
+        "depth": 0.5,
+        "height": 3.0
+      },
+      "defaultScale": 1.0,
+      "tags": ["照明", "ライト", "スタンド"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "sign_arrow",
+      "name": "矢印看板",
+      "description": "誘導用矢印看板",
+      "category": "signage",
+      "modelPath": "models/sign_arrow.glb",
+      "thumbnailPath": "thumbnails/sign_arrow.png",
+      "dimensions": {
+        "width": 0.6,
+        "depth": 0.3,
+        "height": 1.2
+      },
+      "defaultScale": 1.0,
+      "tags": ["看板", "矢印", "誘導"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "sign_a_frame",
+      "name": "A型看板",
+      "description": "折りたたみ式A型看板",
+      "category": "signage",
+      "modelPath": "models/sign_a_frame.glb",
+      "thumbnailPath": "thumbnails/sign_a_frame.png",
+      "dimensions": {
+        "width": 0.6,
+        "depth": 0.5,
+        "height": 1.0
+      },
+      "defaultScale": 1.0,
+      "tags": ["看板", "A型", "折りたたみ"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "generator",
+      "name": "発電機",
+      "description": "可搬型発電機",
+      "category": "other",
+      "modelPath": "models/generator.glb",
+      "thumbnailPath": "thumbnails/generator.png",
+      "dimensions": {
+        "width": 0.7,
+        "depth": 0.5,
+        "height": 0.6
+      },
+      "defaultScale": 1.0,
+      "tags": ["発電機", "電源", "設備"],
+      "isBuiltIn": true
+    },
+    {
+      "id": "trash_bin",
+      "name": "ゴミ箱",
+      "description": "イベント用大型ゴミ箱",
+      "category": "other",
+      "modelPath": "models/trash_bin.glb",
+      "thumbnailPath": "thumbnails/trash_bin.png",
+      "dimensions": {
+        "width": 0.6,
+        "depth": 0.6,
+        "height": 0.9
+      },
+      "defaultScale": 1.0,
+      "tags": ["ゴミ箱", "ダストボックス"],
+      "isBuiltIn": true
+    }
+  ]
+}

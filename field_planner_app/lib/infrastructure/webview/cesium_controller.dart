@@ -70,6 +70,38 @@ class CesiumController extends ChangeNotifier with LoggableMixin {
   /// 計測編集モード終了時のコールバック
   Function(String measurementId)? onMeasurementEditModeEnded;
 
+  // ============================================
+  // 配置物コールバック
+  // ============================================
+
+  /// 配置確定時のコールバック
+  Function(String assetId, GeoPosition position)? onPlacementConfirmed;
+
+  /// 配置キャンセル時のコールバック
+  Function()? onPlacementCancelled;
+
+  /// 配置物選択時のコールバック
+  Function(String placementId)? onPlacementSelected;
+
+  /// 配置物選択解除時のコールバック
+  Function()? onPlacementDeselected;
+
+  /// 配置モード開始時のコールバック
+  Function(String assetId)? onPlacementModeStarted;
+
+  /// 配置物追加完了時のコールバック
+  Function(String placementId)? onPlacementAdded;
+
+  // ============================================
+  // ドローンフォーメーションコールバック
+  // ============================================
+
+  /// ドローンフォーメーション追加完了時のコールバック
+  Function(String formationId, int droneCount)? onDroneFormationAdded;
+
+  /// ドローンフォーメーション削除時のコールバック
+  Function(String formationId)? onDroneFormationRemoved;
+
   /// 3D Tileset追加完了時のコールバック
   Function(String id, String name, GeoPosition center, double radius)? onTilesetAdded;
 
@@ -261,6 +293,69 @@ class CesiumController extends ChangeNotifier with LoggableMixin {
             final visible = payload['visible'] as bool? ?? true;
             onGoogleTilesetVisibilityChanged?.call(visible);
             logInfo('Google tileset visibility changed: $visible');
+          }
+          break;
+
+        // 配置物イベント
+        case 'placementConfirmed':
+          if (payload != null) {
+            final assetId = payload['assetId'] as String;
+            final positionJson = payload['position'] as Map<String, dynamic>;
+            final position = GeoPosition.fromJson(positionJson);
+            onPlacementConfirmed?.call(assetId, position);
+            logInfo('Placement confirmed: $assetId at ${position.latitude}, ${position.longitude}');
+          }
+          break;
+
+        case 'placementCancelled':
+          onPlacementCancelled?.call();
+          logInfo('Placement cancelled');
+          break;
+
+        case 'placementSelected':
+          if (payload != null) {
+            final placementId = payload['id'] as String;
+            onPlacementSelected?.call(placementId);
+            logInfo('Placement selected: $placementId');
+          }
+          break;
+
+        case 'placementDeselected':
+          onPlacementDeselected?.call();
+          logInfo('Placement deselected');
+          break;
+
+        case 'placementModeStarted':
+          if (payload != null) {
+            final assetId = payload['assetId'] as String;
+            onPlacementModeStarted?.call(assetId);
+            logInfo('Placement mode started: $assetId');
+          }
+          break;
+
+        case 'placementAdded':
+          if (payload != null) {
+            final placementId = payload['id'] as String;
+            onPlacementAdded?.call(placementId);
+            logInfo('Placement added: $placementId');
+          }
+          break;
+
+        // ドローンフォーメーションイベント
+        case 'droneFormationAdded':
+          if (payload != null) {
+            final formationId = payload['id'] as String;
+            final droneCount = payload['droneCount'] as int? ?? 0;
+            onDroneFormationAdded?.call(formationId, droneCount);
+            logInfo('Drone formation added: $formationId ($droneCount drones)');
+          }
+          break;
+
+        case 'droneFormationRemoved':
+          if (payload != null) {
+            final formationId = payload['id'] as String;
+            onDroneFormationRemoved?.call(formationId);
+            logInfo('Drone formation removed: $formationId');
           }
           break;
 
@@ -607,5 +702,211 @@ class CesiumController extends ChangeNotifier with LoggableMixin {
       'screenSpaceError': screenSpaceError,
     });
     logInfo('Adjusting tileset quality: $id, SSE: $screenSpaceError');
+  }
+
+  // ============================================
+  // 配置物機能
+  // ============================================
+
+  /// 配置物を追加
+  ///
+  /// [placement] 配置物データ（JSON形式）
+  /// [modelUrl] 3DモデルのURL
+  Future<void> addPlacement(Map<String, dynamic> placement, String modelUrl) async {
+    await executeMethod('addPlacement', {
+      'placement': placement,
+      'modelUrl': modelUrl,
+    });
+    logInfo('Adding placement: ${placement['id']}');
+  }
+
+  /// 配置物を削除
+  ///
+  /// [placementId] 配置物ID
+  Future<void> removePlacement(String placementId) async {
+    await executeMethod('removePlacement', {'placementId': placementId});
+    logInfo('Removing placement: $placementId');
+  }
+
+  /// 配置物を更新
+  ///
+  /// [placement] 配置物データ（JSON形式）
+  Future<void> updatePlacement(Map<String, dynamic> placement) async {
+    await executeMethod('updatePlacement', {'placement': placement});
+    logInfo('Updating placement: ${placement['id']}');
+  }
+
+  /// 配置モードを開始
+  ///
+  /// [assetId] アセットID
+  /// [modelUrl] 3DモデルのURL
+  Future<void> startPlacementMode(String assetId, String modelUrl) async {
+    await executeMethod('startPlacementMode', {
+      'assetId': assetId,
+      'modelUrl': modelUrl,
+    });
+    logInfo('Starting placement mode: $assetId');
+  }
+
+  /// 配置モードをキャンセル
+  Future<void> cancelPlacementMode() async {
+    await executeMethod('cancelPlacementMode', {});
+    logInfo('Cancelling placement mode');
+  }
+
+  /// 配置物を選択
+  ///
+  /// [placementId] 配置物ID
+  Future<void> selectPlacement(String placementId) async {
+    await executeMethod('selectPlacement', {'placementId': placementId});
+  }
+
+  /// 配置物の選択を解除
+  Future<void> deselectPlacement() async {
+    await executeMethod('deselectPlacement', {});
+  }
+
+  /// 配置物にズーム
+  ///
+  /// [placementId] 配置物ID
+  Future<void> zoomToPlacement(String placementId) async {
+    await executeMethod('zoomToPlacement', {'placementId': placementId});
+    logInfo('Zooming to placement: $placementId');
+  }
+
+  /// スナップ設定を更新
+  ///
+  /// [gridEnabled] グリッドスナップ有効
+  /// [gridSize] グリッドサイズ（メートル）
+  /// [groundEnabled] 地面スナップ有効
+  /// [angleEnabled] 角度スナップ有効
+  /// [angleStep] 角度スナップのステップ（度）
+  Future<void> updateSnapSettings({
+    bool? gridEnabled,
+    double? gridSize,
+    bool? groundEnabled,
+    bool? angleEnabled,
+    double? angleStep,
+  }) async {
+    await executeMethod('updateSnapSettings', {
+      if (gridEnabled != null) 'gridEnabled': gridEnabled,
+      if (gridSize != null) 'gridSize': gridSize,
+      if (groundEnabled != null) 'groundEnabled': groundEnabled,
+      if (angleEnabled != null) 'angleEnabled': angleEnabled,
+      if (angleStep != null) 'angleStep': angleStep,
+    });
+  }
+
+  // ============================================
+  // ドローンフォーメーション機能
+  // ============================================
+
+  /// ドローンフォーメーションを追加
+  ///
+  /// [id] フォーメーションID
+  /// [name] フォーメーション名
+  /// [drones] ドローンデータリスト
+  /// [basePosition] 基準位置
+  /// [altitude] 高度（メートル）
+  /// [heading] 方位角（度）
+  /// [scale] スケール
+  /// [pointSize] ポイントサイズ（ピクセル）
+  /// [customColor] カスタム色（HEX）
+  /// [useIndividualColors] 個別色を使用するか
+  Future<void> addDroneFormation({
+    required String id,
+    required String name,
+    required List<Map<String, dynamic>> drones,
+    required GeoPosition basePosition,
+    double altitude = 50.0,
+    double heading = 0.0,
+    double tilt = 0.0,
+    double scale = 1.0,
+    double pointSize = 5.0,
+    double glowIntensity = 1.0,
+    String? customColor,
+    bool useIndividualColors = true,
+  }) async {
+    await executeMethod('addDroneFormation', {
+      'id': id,
+      'name': name,
+      'drones': drones,
+      'basePosition': {
+        'longitude': basePosition.longitude,
+        'latitude': basePosition.latitude,
+      },
+      'altitude': altitude,
+      'heading': heading,
+      'tilt': tilt,
+      'scale': scale,
+      'pointSize': pointSize,
+      'glowIntensity': glowIntensity,
+      if (customColor != null) 'customColor': customColor,
+      'useIndividualColors': useIndividualColors,
+    });
+    logInfo('Adding drone formation: $id');
+  }
+
+  /// ドローンフォーメーションを削除
+  ///
+  /// [formationId] フォーメーションID
+  Future<void> removeDroneFormation(String formationId) async {
+    await executeMethod('removeDroneFormation', {'formationId': formationId});
+    logInfo('Removing drone formation: $formationId');
+  }
+
+  /// ドローンフォーメーションを更新
+  ///
+  /// 全ての設定を含むconfigオブジェクトを渡す
+  Future<void> updateDroneFormation(Map<String, dynamic> config) async {
+    await executeMethod('updateDroneFormation', config);
+    logInfo('Updating drone formation: ${config['id']}');
+  }
+
+  /// ドローンフォーメーションのスタイルを更新
+  ///
+  /// [formationId] フォーメーションID
+  /// [pointSize] ポイントサイズ（ピクセル）
+  /// [glowIntensity] 輝度（グロー強度、0.5-3.0）
+  /// [customColor] カスタム色（HEX）
+  /// [useIndividualColors] 個別色を使用するか
+  /// [visible] 表示フラグ
+  Future<void> updateDroneFormationStyle({
+    required String formationId,
+    double? pointSize,
+    double? glowIntensity,
+    String? customColor,
+    bool? useIndividualColors,
+    bool? visible,
+  }) async {
+    await executeMethod('updateDroneFormationStyle', {
+      'formationId': formationId,
+      'options': {
+        if (pointSize != null) 'pointSize': pointSize,
+        if (glowIntensity != null) 'glowIntensity': glowIntensity,
+        if (customColor != null) 'customColor': customColor,
+        if (useIndividualColors != null) 'useIndividualColors': useIndividualColors,
+        if (visible != null) 'visible': visible,
+      },
+    });
+  }
+
+  /// ドローンフォーメーションの表示/非表示を切り替え
+  ///
+  /// [formationId] フォーメーションID
+  /// [visible] 表示フラグ
+  Future<void> setDroneFormationVisible(String formationId, bool visible) async {
+    await executeMethod('setDroneFormationVisible', {
+      'formationId': formationId,
+      'visible': visible,
+    });
+  }
+
+  /// ドローンフォーメーションにズーム
+  ///
+  /// [formationId] フォーメーションID
+  Future<void> zoomToDroneFormation(String formationId) async {
+    await executeMethod('zoomToDroneFormation', {'formationId': formationId});
+    logInfo('Zooming to drone formation: $formationId');
   }
 }

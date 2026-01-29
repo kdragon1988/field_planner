@@ -11,11 +11,27 @@ enum AssetCategory {
   chair('椅子', 'chair'),
   lighting('照明', 'lighting'),
   signage('看板', 'signage'),
+  droneShow('ドローンショー', 'drone_show'),
   other('その他', 'other');
 
   final String displayName;
   final String id;
   const AssetCategory(this.displayName, this.id);
+}
+
+/// アセットタイプ
+/// 
+/// 標準アセット（3Dモデル）とドローンフォーメーション（ポイント群）を区別
+enum AssetType {
+  /// 標準的な3Dモデルアセット
+  standard('標準', 'standard'),
+  
+  /// ドローンフォーメーション（複数ポイント）
+  droneFormation('ドローンフォーメーション', 'drone_formation');
+
+  final String displayName;
+  final String id;
+  const AssetType(this.displayName, this.id);
 }
 
 /// アセットモデル

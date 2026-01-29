@@ -48,6 +48,7 @@ const _$AssetCategoryEnumMap = {
   AssetCategory.chair: 'chair',
   AssetCategory.lighting: 'lighting',
   AssetCategory.signage: 'signage',
+  AssetCategory.droneShow: 'droneShow',
   AssetCategory.other: 'other',
 };
 
