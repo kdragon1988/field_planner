@@ -1,0 +1,43 @@
+/**
+ * CesiumJS カスタムスタイル
+ * 
+ * CesiumJSのデフォルトUIを調整し、
+ * アプリケーションのデザインに統一する
+ */
+
+/* コンテナの背景色 */
+#cesiumContainer {
+  background-color: #1a1a2e;
+}
+
+/* Cesiumクレジット表示の調整 */
+.cesium-credit-logoContainer {
+  display: none !important;
+}
+
+.cesium-credit-textContainer {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+/* 情報ボックスのスタイル調整 */
+.cesium-infoBox {
+  background: rgba(38, 38, 38, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.cesium-infoBox-title {
+  background: rgba(33, 150, 243, 0.8);
+  border-radius: 8px 8px 0 0;
+}
+
+/* 選択インジケーターの色 */
+.cesium-selection-wrapper {
+  border-color: #2196F3 !important;
+}
+
+/* ローディング表示 */
+.cesium-widget-credits {
+  font-size: 10px;
+}
