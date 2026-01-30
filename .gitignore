@@ -1,2 +1,9 @@
 field_planner_app/macos/Runner/Resources/tools/
 field_planner_app/build/
+
+# Test build artifacts
+build/
+dist/
+*.spec
+field_planner_app/scripts/hello.py
+
