@@ -238,9 +238,11 @@ class TilesetNotifier extends StateNotifier<TilesetState> with LoggableMixin {
     bool clipGoogleTiles = true,
     bool isPointCloud = false,
   }) async {
+    logInfo('[DEBUG] addTileset called: name=$name, path=$tilesetJsonPath');
+    
     if (_cesiumController == null) {
-      logWarning('CesiumController not available');
-      return;
+      logError('[DEBUG] CesiumController is NULL - cannot add tileset');
+      throw Exception('CesiumControllerが初期化されていません。マップが読み込まれるまでお待ちください。');
     }
 
     final id = const Uuid().v4();

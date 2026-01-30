@@ -150,14 +150,22 @@ class PointCloudConverter with LoggableMixin {
     // macOSアプリバンドル内のパスを確認
     final bundlePath = Platform.resolvedExecutable;
     final appDir = path.dirname(path.dirname(bundlePath));
-    candidatePaths.add(path.join(appDir, 'Resources', 'tools', 'py3dtiles_converter'));
+    // onedir構成のため、tools/py3dtiles_converter/py3dtiles_converter を参照
+    candidatePaths.add(path.join(
+        appDir, 'Resources', 'tools', 'py3dtiles_converter', 'py3dtiles_converter'));
 
     // 開発環境用のパス（flutter run時）
     var currentDir = Directory(bundlePath);
     for (var i = 0; i < 10; i++) {
       currentDir = currentDir.parent;
       final macosRunnerResources = path.join(
-        currentDir.path, 'macos', 'Runner', 'Resources', 'tools', 'py3dtiles_converter'
+        currentDir.path,
+        'macos',
+        'Runner',
+        'Resources',
+        'tools',
+        'py3dtiles_converter',
+        'py3dtiles_converter',
       );
       if (await File(macosRunnerResources).exists()) {
         candidatePaths.add(macosRunnerResources);
@@ -166,16 +174,33 @@ class PointCloudConverter with LoggableMixin {
     }
 
     // 候補パスを順番に確認
+    // 候補パスを順番に確認
     for (final candidatePath in candidatePaths) {
       logInfo('Checking converter path: $candidatePath');
+      // ファイルとして存在するか確認
       if (await File(candidatePath).exists()) {
         logInfo('Found bundled converter at: $candidatePath (fallback)');
         return candidatePath;
       }
+      
+      // onedir構成の場合、ディレクトリ直下のバイナリも念のため確認
+      // 例: .../py3dtiles_converter/py3dtiles_converter ではなく .../py3dtiles_converter かもしれない
+      if (await Directory(candidatePath).exists()) {
+         final legacyPath = candidatePath; // 実はファイル名と同じディレクトリ名だった場合
+         // ディレクトリの中の同名ファイルを探す
+         final innerBinary = path.join(candidatePath, 'py3dtiles_converter');
+         if (await File(innerBinary).exists()) {
+             logInfo('Found bundled converter inside dir at: $innerBinary');
+             return innerBinary;
+         }
+      }
     }
 
-    logError('py3dtiles not found. Please install: pip3 install "py3dtiles[las]"');
-    return null;
+    final searchedPaths = candidatePaths.join('\n');
+    final msg = 'py3dtiles_converter not found in:\n$searchedPaths\n\nPlease check "scripts/build_py3dtiles.sh" output.';
+    logError(msg);
+    // 呼び出し元で表示できるようExceptionを投げる
+    throw Exception(msg);
   }
 
   /// 点群ファイルを3D Tilesに変換
@@ -274,10 +299,12 @@ print("Conversion completed successfully.")
         },
       );
 
-      // 標準エラー出力を監視
+      // 標準エラー出力を監視してバッファリング
+      final stderrBuffer = StringBuffer();
       _currentProcess!.stderr.transform(const SystemEncoding().decoder).listen(
         (data) {
           logWarning('[py3dtiles stderr] $data');
+          stderrBuffer.write(data);
         },
       );
 
@@ -290,7 +317,9 @@ print("Conversion completed successfully.")
       }
 
       if (exitCode != 0) {
-        return ConversionResult.failure('変換に失敗しました (exit code: $exitCode)');
+        final stderrContent = stderrBuffer.toString();
+        final errorDetail = stderrContent.isNotEmpty ? '\n\n詳細:\n$stderrContent' : '';
+        return ConversionResult.failure('変換に失敗しました (exit code: $exitCode)$errorDetail');
       }
 
       // tileset.jsonの存在確認

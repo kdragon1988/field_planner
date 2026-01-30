@@ -687,19 +687,36 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
     if (result != null && mounted) {
       // 変換済みのTilesetを追加
-      await ref.read(tilesetProvider.notifier).addTileset(
-            name: result.name,
-            tilesetJsonPath: result.tilesetJsonPath,
-            folderPath: result.outputPath,
-            flyTo: result.flyToAfterImport,
-            clipGoogleTiles: result.hideGoogleTiles,
-            isPointCloud: result.isPointCloud,
-          );
+      try {
+        debugPrint('[DEBUG] Adding point cloud tileset: ${result.name}');
+        debugPrint('[DEBUG] tilesetJsonPath: ${result.tilesetJsonPath}');
+        debugPrint('[DEBUG] outputPath: ${result.outputPath}');
+        
+        await ref.read(tilesetProvider.notifier).addTileset(
+              name: result.name,
+              tilesetJsonPath: result.tilesetJsonPath,
+              folderPath: result.outputPath,
+              flyTo: result.flyToAfterImport,
+              clipGoogleTiles: result.hideGoogleTiles,
+              isPointCloud: result.isPointCloud,
+            );
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('点群「${result.name}」をインポートしました')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('点群「${result.name}」をインポートしました')),
+          );
+        }
+      } catch (e) {
+        debugPrint('[DEBUG] Error adding tileset: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('レイヤー追加エラー: $e'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 10),
+            ),
+          );
+        }
       }
     }
   }

@@ -27,17 +27,29 @@ else
 fi
 
 # 外部バイナリ（py3dtiles_converter）の同梱
-CONVERTER_SRC="macos/Runner/Resources/tools/py3dtiles_converter"
-CONVERTER_DEST="$APP_PATH/Contents/Resources/tools"
+# onedir構成なので、フォルダごとコピーする
+# ソース: macos/Runner/Resources/tools/py3dtiles_converter/ (ディレクトリ)
+# 宛先: Contents/Resources/tools/py3dtiles_converter/ (ディレクトリ)
+# 実行ファイル: .../py3dtiles_converter/py3dtiles_converter
 
-if [ -f "$CONVERTER_SRC" ]; then
-  echo "Bundling py3dtiles_converter..."
-  mkdir -p "$CONVERTER_DEST"
-  cp "$CONVERTER_SRC" "$CONVERTER_DEST/"
-  chmod +x "$CONVERTER_DEST/py3dtiles_converter"
-  echo "Copied converter to: $CONVERTER_DEST/py3dtiles_converter"
+CONVERTER_SRC_DIR="macos/Runner/Resources/tools/py3dtiles_converter"
+CONVERTER_DEST_DIR="$APP_PATH/Contents/Resources/tools"
+
+if [ -d "$CONVERTER_SRC_DIR" ]; then
+  echo "Bundling py3dtiles_converter directory..."
+  mkdir -p "$CONVERTER_DEST_DIR"
+  
+  # 既存のものを削除
+  rm -rf "$CONVERTER_DEST_DIR/py3dtiles_converter"
+  
+  # ディレクトリとしてコピー
+  cp -r "$CONVERTER_SRC_DIR" "$CONVERTER_DEST_DIR/"
+  
+  # 実行権限の確認
+  chmod +x "$CONVERTER_DEST_DIR/py3dtiles_converter/py3dtiles_converter"
+  echo "Copied converter dir to: $CONVERTER_DEST_DIR/py3dtiles_converter"
 else
-  echo "WARNING: py3dtiles_converter binary not found at $CONVERTER_SRC"
+  echo "WARNING: py3dtiles_converter directory not found at $CONVERTER_SRC_DIR"
   echo "Please run scripts/build_py3dtiles.sh first."
   exit 1
 fi

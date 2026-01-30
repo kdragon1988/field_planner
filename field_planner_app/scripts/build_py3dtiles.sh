@@ -37,25 +37,29 @@ cat > py3dtiles_wrapper.py << 'EOF'
 #!/usr/bin/env python3
 """
 py3dtiles CLIラッパー
-
-点群ファイル（LAS/LAZ/PLY）を3D Tiles形式に変換する
-PyInstallerでパッケージ化して使用
 """
 import sys
 import os
 import multiprocessing
 
+# 起動直後にログを出力 (バッファリング無効化)
+print("DEBUG: Wrapper script started", flush=True)
+
 def main():
-    from py3dtiles.convert import convert
+    print("DEBUG: Entering main function", flush=True)
+    try:
+        print("DEBUG: Importing py3dtiles.convert...", flush=True)
+        from py3dtiles.convert import convert
+        print("DEBUG: Import successful", flush=True)
+    except Exception as e:
+        print(f"CRITICAL ERROR: Failed to import py3dtiles: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
     
     if len(sys.argv) < 3:
         print("Usage: py3dtiles_converter <input_file> <output_dir> [options]")
-        print("")
-        print("Options:")
-        print("  --srs <epsg>       Source CRS (e.g., 4326)")
-        print("  --jobs <n>         Number of parallel jobs (default: 1)")
-        print("")
-        print("Supported formats: LAS, LAZ, PLY, XYZ")
+        # ... (help text) ...
         sys.exit(1)
     
     input_file = sys.argv[1]
@@ -63,7 +67,7 @@ def main():
     
     # オプション解析
     srs = None
-    jobs = 1  # PyInstallerではマルチプロセスが問題を起こすためデフォルト1
+    jobs = 1
     
     i = 3
     while i < len(sys.argv):
@@ -76,27 +80,44 @@ def main():
         else:
             i += 1
     
-    # 入力ファイルの存在確認
     if not os.path.exists(input_file):
         print(f"Error: Input file not found: {input_file}")
         sys.exit(1)
     
-    # 出力ディレクトリを作成
     os.makedirs(output_dir, exist_ok=True)
     
     print(f"Converting: {input_file}")
     print(f"Output: {output_dir}")
     print(f"Jobs: {jobs}")
-    if srs:
-        print(f"Source CRS: EPSG:{srs}")
+    print(f"Source CRS: {srs if srs else 'auto-detect'}")
+    print(f"Target CRS: EPSG:4978 (ECEF for CesiumJS)")
     
     try:
-        # py3dtilesで変換
+        import pyproj
+        
+        # CRS設定：CesiumはECEF座標（EPSG:4978）を期待
+        crs_out = pyproj.CRS.from_epsg(4978)
+        
+        # 入力CRSの設定
+        crs_in = None
+        force_crs_in = False
+        if srs:
+            try:
+                crs_in = pyproj.CRS.from_epsg(int(srs))
+                force_crs_in = True
+                print(f"Forcing input CRS: EPSG:{srs}")
+            except Exception as e:
+                print(f"Warning: Could not parse CRS {srs}: {e}")
+        
         convert(
             input_file,
             outfolder=output_dir,
             jobs=jobs,
-            # SRSが指定されていればそれを使用
+            overwrite=True,
+            use_process_pool=False,
+            crs_in=crs_in,
+            force_crs_in=force_crs_in,
+            crs_out=crs_out,
         )
         print("Conversion completed successfully.")
         sys.exit(0)
@@ -107,16 +128,19 @@ def main():
         sys.exit(1)
 
 if __name__ == '__main__':
-    # PyInstallerでのマルチプロセッシングサポートに必須
-    multiprocessing.freeze_support()
-    # macOSでforkの問題を回避
-    multiprocessing.set_start_method('spawn', force=True)
-    main()
+    try:
+        print("DEBUG: Initializing multiprocessing", flush=True)
+        multiprocessing.freeze_support()
+        multiprocessing.set_start_method('spawn', force=True)
+        main()
+    except Exception as e:
+        print(f"CRITICAL ERROR in main block: {e}")
+        sys.exit(1)
 EOF
 
 # PyInstallerでバイナリをビルド
 echo "PyInstallerでバイナリをビルド中..."
-pyinstaller --onefile \
+pyinstaller --onedir \
     --name py3dtiles_converter \
     --hidden-import=py3dtiles \
     --hidden-import=py3dtiles.convert \
@@ -125,13 +149,22 @@ pyinstaller --onefile \
     --hidden-import=pyproj \
     --hidden-import=numpy \
     --collect-all py3dtiles \
+    --noconfirm \
+    --clean \
     py3dtiles_wrapper.py
 
 # 出力先にコピー
-echo "バイナリを出力先にコピー中..."
+echo "バイナリディレクトリを出力先にコピー中..."
 mkdir -p "$OUTPUT_DIR"
-cp dist/py3dtiles_converter "$OUTPUT_DIR/"
-chmod +x "$OUTPUT_DIR/py3dtiles_converter"
+rm -rf "$OUTPUT_DIR/py3dtiles_converter" # 既存のファイルを削除
+rm -rf "$OUTPUT_DIR/py3dtiles_converter_dir" # 既存のディレクトリを削除
+
+# ディレクトリとしてコピー（名前を区別するため _dir をつけるか、構造を変える）
+# Dart側では .../tools/py3dtiles_converter/py3dtiles_converter を呼ぶことになる
+cp -r dist/py3dtiles_converter "$OUTPUT_DIR/"
+
+# 実行権限
+chmod +x "$OUTPUT_DIR/py3dtiles_converter/py3dtiles_converter"
 
 # クリーンアップ
 deactivate
@@ -139,7 +172,7 @@ cd "$PROJECT_DIR"
 
 echo ""
 echo "=== ビルド完了 ==="
-echo "バイナリの場所: $OUTPUT_DIR/py3dtiles_converter"
+echo "バイナリの場所: $OUTPUT_DIR/py3dtiles_converter/py3dtiles_converter"
 echo ""
 echo "テスト方法:"
-echo "  $OUTPUT_DIR/py3dtiles_converter <input.las> <output_dir>"
+echo "  $OUTPUT_DIR/py3dtiles_converter/py3dtiles_converter <input.las> <output_dir>"
