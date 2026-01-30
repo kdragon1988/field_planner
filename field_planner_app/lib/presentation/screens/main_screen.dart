@@ -16,6 +16,7 @@ import '../providers/project_provider.dart';
 import '../providers/tileset_provider.dart';
 import '../widgets/cesium_map_widget.dart';
 import '../widgets/dialogs/tileset_import_dialog.dart';
+import '../widgets/dialogs/point_cloud_import_dialog.dart';
 import '../widgets/panels/layer_panel.dart';
 import '../widgets/panels/drone_show_panel.dart';
 import '../widgets/panels/asset_palette.dart';
@@ -241,10 +242,38 @@ class _MainScreenState extends ConsumerState<MainScreen>
           ),
 
           // 3Dデータインポート
-          IconButton(
+          PopupMenuButton<String>(
             icon: const Icon(Icons.add_box),
-            tooltip: '3Dモデルをインポート',
-            onPressed: _showTilesetImportDialog,
+            tooltip: '3Dデータをインポート',
+            onSelected: (value) {
+              if (value == 'tileset') {
+                _showTilesetImportDialog();
+              } else if (value == 'pointcloud') {
+                _showPointCloudImportDialog();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'tileset',
+                child: ListTile(
+                  leading: Icon(Icons.view_in_ar),
+                  title: Text('3Dモデル（3D Tiles）'),
+                  subtitle: Text('DJI Terra出力など'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'pointcloud',
+                child: ListTile(
+                  leading: Icon(Icons.scatter_plot),
+                  title: Text('点群'),
+                  subtitle: Text('LAS, LAZ, PLY, E57'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
           ),
 
           const Spacer(),
@@ -634,6 +663,42 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('3Dモデル「${result.name}」をインポートしました')),
+        );
+      }
+    }
+  }
+
+  /// 点群インポートダイアログを表示
+  Future<void> _showPointCloudImportDialog() async {
+    // プロジェクトパスを取得
+    String? projectPath;
+    final projectState = ref.read(projectNotifierProvider);
+    if (projectState is ProjectLoadedState) {
+      projectPath = projectState.projectPath;
+    }
+
+    final result = await showDialog<PointCloudImportResult>(
+      context: context,
+      barrierDismissible: false, // 変換中に誤って閉じないように
+      builder: (context) => PointCloudImportDialog(
+        projectPath: projectPath,
+      ),
+    );
+
+    if (result != null && mounted) {
+      // 変換済みのTilesetを追加
+      await ref.read(tilesetProvider.notifier).addTileset(
+            name: result.name,
+            tilesetJsonPath: result.tilesetJsonPath,
+            folderPath: result.outputPath,
+            flyTo: result.flyToAfterImport,
+            clipGoogleTiles: result.hideGoogleTiles,
+            isPointCloud: result.isPointCloud,
+          );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('点群「${result.name}」をインポートしました')),
         );
       }
     }

@@ -681,6 +681,118 @@ function adjustTilesetQuality(params) {
 }
 
 /**
+ * 点群スタイルを設定
+ * 
+ * @param {Object} params - スタイルパラメータ
+ * @param {string} params.id - TilesetのID
+ * @param {number} [params.pointSize] - 点サイズ（1-10）
+ * @param {string} [params.colorMode] - 色モード ('rgb', 'height', 'intensity', 'classification')
+ * @param {number} [params.minHeight] - 高さカラーリングの最小値
+ * @param {number} [params.maxHeight] - 高さカラーリングの最大値
+ */
+function setPointCloudStyle(params) {
+  if (!viewer) return;
+
+  const tileset = tilesets.get(params.id);
+  if (!tileset) {
+    console.warn('[CesiumBridge] Tileset not found:', params.id);
+    return;
+  }
+
+  const styleOptions = {};
+
+  // 点サイズの設定
+  if (params.pointSize !== undefined) {
+    styleOptions.pointSize = params.pointSize.toString();
+  }
+
+  // 色モードに応じた色表現を設定
+  if (params.colorMode) {
+    switch (params.colorMode) {
+      case 'rgb':
+        // 元のRGB色を使用
+        styleOptions.color = "color('white')";
+        break;
+      case 'height':
+        // 高さによる色分け（青→緑→黄→赤）
+        const minH = params.minHeight || 0;
+        const maxH = params.maxHeight || 100;
+        styleOptions.color = `color() * color('${getHeightColorExpression(minH, maxH)}')`;
+        // より詳細な高さベースのカラーリング
+        styleOptions.color = {
+          conditions: [
+            [`\${POSITION}[2] < ${minH + (maxH - minH) * 0.2}`, "color('#0000FF')"],
+            [`\${POSITION}[2] < ${minH + (maxH - minH) * 0.4}`, "color('#00FFFF')"],
+            [`\${POSITION}[2] < ${minH + (maxH - minH) * 0.6}`, "color('#00FF00')"],
+            [`\${POSITION}[2] < ${minH + (maxH - minH) * 0.8}`, "color('#FFFF00')"],
+            ['true', "color('#FF0000')"]
+          ]
+        };
+        break;
+      case 'intensity':
+        // 強度による色分け
+        styleOptions.color = {
+          conditions: [
+            ['${intensity} < 50', "color('#000080')"],
+            ['${intensity} < 100', "color('#0000FF')"],
+            ['${intensity} < 150', "color('#00FFFF')"],
+            ['${intensity} < 200', "color('#00FF00')"],
+            ['${intensity} < 250', "color('#FFFF00')"],
+            ['true', "color('#FF0000')"]
+          ]
+        };
+        break;
+      case 'classification':
+        // LAS分類による色分け
+        styleOptions.color = {
+          conditions: [
+            ['${classification} === 2', "color('#8B4513')"],  // 地面（茶色）
+            ['${classification} === 3', "color('#00FF00')"],  // 低植生（緑）
+            ['${classification} === 4', "color('#228B22')"],  // 中植生（深緑）
+            ['${classification} === 5', "color('#006400')"],  // 高植生（濃緑）
+            ['${classification} === 6', "color('#FF0000')"],  // 建物（赤）
+            ['${classification} === 7', "color('#FFFF00')"],  // 低ノイズ（黄色）
+            ['${classification} === 9', "color('#0000FF')"],  // 水面（青）
+            ['true', "color('#FFFFFF')"]                       // その他（白）
+          ]
+        };
+        break;
+    }
+  }
+
+  // スタイルを適用
+  try {
+    tileset.style = new Cesium.Cesium3DTileStyle(styleOptions);
+    console.log('[CesiumBridge] Point cloud style applied:', params.id, styleOptions);
+    
+    sendToFlutter('pointCloudStyleApplied', {
+      id: params.id,
+      pointSize: params.pointSize,
+      colorMode: params.colorMode,
+    });
+  } catch (error) {
+    console.error('[CesiumBridge] Failed to apply point cloud style:', error);
+    sendToFlutter('pointCloudStyleError', {
+      id: params.id,
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 高さカラーリングの色表現を生成（ヘルパー関数）
+ */
+function getHeightColorExpression(minHeight, maxHeight) {
+  const range = maxHeight - minHeight;
+  return `hsla(
+    (1.0 - clamp((\${POSITION}[2] - ${minHeight}) / ${range}, 0.0, 1.0)) * 240.0 / 360.0,
+    1.0,
+    0.5,
+    1.0
+  )`;
+}
+
+/**
  * 3D Tilesetの表示/非表示を切り替え
  * @param {string} id - TilesetのID
  * @param {boolean} visible - 表示フラグ
@@ -2471,6 +2583,9 @@ function handleFlutterMessage(method, params) {
       break;
     case 'adjustTilesetQuality':
       adjustTilesetQuality(params);
+      break;
+    case 'setPointCloudStyle':
+      setPointCloudStyle(params);
       break;
     
     // 計測関連

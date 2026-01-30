@@ -49,7 +49,9 @@ class _LayerPanelState extends ConsumerState<LayerPanel> {
             children: [
               // 通常のレイヤー
               ...allLayers.map((layer) {
-                final isCustomTileset = layer.type == LayerType.tiles3D &&
+                // 3D TilesまたはPointCloudタイプでカスタムインポートされたもの
+                final isCustomTileset = (layer.type == LayerType.tiles3D || 
+                    layer.type == LayerType.pointCloud) &&
                     layer.id != 'google_3d' &&
                     tilesetState.layers.any((t) => t.id == layer.id);
                 
@@ -275,7 +277,8 @@ class _LayerPanelState extends ConsumerState<LayerPanel> {
             tooltip: '選択レイヤーを削除',
             onPressed: _selectedLayer != null &&
                     !_selectedLayer!.locked &&
-                    _selectedLayer!.type == LayerType.tiles3D &&
+                    (_selectedLayer!.type == LayerType.tiles3D ||
+                     _selectedLayer!.type == LayerType.pointCloud) &&
                     _selectedLayer!.id != 'google_3d'
                 ? () => _deleteTilesetLayer(_selectedLayer!.id)
                 : null,
@@ -327,15 +330,16 @@ class _LayerPanelState extends ConsumerState<LayerPanel> {
       return;
     }
 
-    // 3D Tilesレイヤー
-    if (layer.type == LayerType.tiles3D) {
+    // 3D Tilesまたは点群レイヤー
+    if (layer.type == LayerType.tiles3D || layer.type == LayerType.pointCloud) {
       ref.read(tilesetProvider.notifier).setTilesetVisible(layer.id, visible);
     }
   }
 
   void _updateLayerOpacity(Layer layer, double opacity) {
-    // 3D Tilesレイヤー
-    if (layer.type == LayerType.tiles3D && layer.id != 'google_3d') {
+    // 3D Tilesまたは点群レイヤー
+    if ((layer.type == LayerType.tiles3D || layer.type == LayerType.pointCloud) && 
+        layer.id != 'google_3d') {
       ref.read(tilesetProvider.notifier).setTilesetOpacity(layer.id, opacity);
     }
   }

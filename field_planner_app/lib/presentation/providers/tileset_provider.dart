@@ -45,12 +45,15 @@ class TilesetLayer {
   /// Google 3D Tilesをクリッピングするか
   final bool clipGoogleTiles;
 
+  /// 点群データかどうか
+  final bool isPointCloud;
+
   /// レイヤーに変換
   Layer toLayer() {
     return Layer(
       id: id,
       name: name,
-      type: LayerType.tiles3D,
+      type: isPointCloud ? LayerType.pointCloud : LayerType.tiles3D,
       visible: visible,
       opacity: opacity,
       sourcePath: tilesetJsonPath,
@@ -61,6 +64,7 @@ class TilesetLayer {
         'heightOffset': heightOffset,
         'screenSpaceError': screenSpaceError,
         'clipGoogleTiles': clipGoogleTiles,
+        'isPointCloud': isPointCloud,
       },
     );
   }
@@ -77,6 +81,7 @@ class TilesetLayer {
     this.heightOffset = 0.0,
     this.screenSpaceError = 2.0,
     this.clipGoogleTiles = true,
+    this.isPointCloud = false,
   });
 
   TilesetLayer copyWith({
@@ -91,6 +96,7 @@ class TilesetLayer {
     double? heightOffset,
     double? screenSpaceError,
     bool? clipGoogleTiles,
+    bool? isPointCloud,
   }) {
     return TilesetLayer(
       id: id ?? this.id,
@@ -104,6 +110,7 @@ class TilesetLayer {
       heightOffset: heightOffset ?? this.heightOffset,
       screenSpaceError: screenSpaceError ?? this.screenSpaceError,
       clipGoogleTiles: clipGoogleTiles ?? this.clipGoogleTiles,
+      isPointCloud: isPointCloud ?? this.isPointCloud,
     );
   }
 
@@ -123,6 +130,7 @@ class TilesetLayer {
       heightOffset: (json['heightOffset'] as num?)?.toDouble() ?? 0.0,
       screenSpaceError: (json['screenSpaceError'] as num?)?.toDouble() ?? 2.0,
       clipGoogleTiles: json['clipGoogleTiles'] as bool? ?? true,
+      isPointCloud: json['isPointCloud'] as bool? ?? false,
     );
   }
 
@@ -140,6 +148,7 @@ class TilesetLayer {
       'heightOffset': heightOffset,
       'screenSpaceError': screenSpaceError,
       'clipGoogleTiles': clipGoogleTiles,
+      'isPointCloud': isPointCloud,
     };
   }
 }
@@ -227,6 +236,7 @@ class TilesetNotifier extends StateNotifier<TilesetState> with LoggableMixin {
     required String folderPath,
     bool flyTo = true,
     bool clipGoogleTiles = true,
+    bool isPointCloud = false,
   }) async {
     if (_cesiumController == null) {
       logWarning('CesiumController not available');
@@ -254,6 +264,7 @@ class TilesetNotifier extends StateNotifier<TilesetState> with LoggableMixin {
       tilesetJsonPath: tilesetJsonPath,
       folderPath: folderPath,
       clipGoogleTiles: clipGoogleTiles,
+      isPointCloud: isPointCloud,
     );
     state = state.copyWith(
       layers: [...state.layers, layer],
