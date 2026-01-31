@@ -41,9 +41,24 @@ py3dtiles CLIラッパー
 import sys
 import os
 import multiprocessing
+import tempfile
 
 # 起動直後にログを出力 (バッファリング無効化)
 print("DEBUG: Wrapper script started", flush=True)
+
+# [FIX] MacOS App Sandbox内でパスが長くなりすぎる問題を回避するため、/tmp を使用する
+# zmq.error.ZMQError: ipc path "..." is longer than 103 characters
+try:
+    # /tmp は短く、システム標準の場所。App Sandbox内でもアクセス許可があればパス長問題を回避できる
+    target_temp = '/tmp'
+    if os.path.exists(target_temp) and os.access(target_temp, os.W_OK):
+        old_temp = tempfile.gettempdir()
+        tempfile.tempdir = target_temp
+        print(f"DEBUG: Overriding tempfile.tempdir from {old_temp} to {target_temp}", flush=True)
+    else:
+        print(f"DEBUG: {target_temp} not accessible, keeping default: {tempfile.gettempdir()}", flush=True)
+except Exception as e:
+    print(f"DEBUG: Failed to override tempdir: {e}", flush=True)
 
 def main():
     print("DEBUG: Entering main function", flush=True)
